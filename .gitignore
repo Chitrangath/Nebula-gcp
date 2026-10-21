@@ -36,6 +36,10 @@ contracts/lib/
 *.swo
 *~
 
+# Repository-local Git metadata and downloaded Windows metadata
+.git-local/
+*:Zone.Identifier
+
 # OS
 .DS_Store
 Thumbs.db
