@@ -1,0 +1,177 @@
+{
+  "apiVersion": "serving.knative.dev/v1",
+  "kind": "Service",
+  "metadata": {
+    "name": "__OWNER_APPROVED_SERVICE_NAME__",
+    "annotations": {
+      "run.googleapis.com/ingress": "all"
+    }
+  },
+  "spec": {
+    "template": {
+      "metadata": {
+        "annotations": {
+          "autoscaling.knative.dev/minScale": "0",
+          "autoscaling.knative.dev/maxScale": "2",
+          "run.googleapis.com/cpu-throttling": "true",
+          "run.googleapis.com/startup-cpu-boost": "false"
+        }
+      },
+      "spec": {
+        "serviceAccountName": "__OWNER_APPROVED_RUNTIME_SERVICE_ACCOUNT__",
+        "containerConcurrency": 8,
+        "timeoutSeconds": 60,
+        "containers": [
+          {
+            "name": "api",
+            "image": "__OWNER_APPROVED_IMAGE_DIGEST__",
+            "command": ["/bin/sh"],
+            "args": [
+              "-c",
+              "exec uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port \"${PORT:?Cloud Run PORT is required}\""
+            ],
+            "ports": [
+              {
+                "name": "http1",
+                "containerPort": 8080
+              }
+            ],
+            "env": [
+              {
+                "name": "RUNNERS_ENABLED",
+                "value": "false"
+              },
+              {
+                "name": "FRONTEND_URL",
+                "value": "__REAL_VERCEL_HTTPS_ORIGIN_REQUIRED__"
+              },
+              {
+                "name": "DATABASE_URL",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "name": "__OWNER_APPROVED_DATABASE_URL_SECRET__",
+                    "key": "__OWNER_APPROVED_DATABASE_URL_SECRET_VERSION__"
+                  }
+                }
+              },
+              {
+                "name": "JWT_SECRET",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "name": "__OWNER_APPROVED_JWT_SECRET__",
+                    "key": "__OWNER_APPROVED_JWT_SECRET_VERSION__"
+                  }
+                }
+              },
+              {
+                "name": "JWT_EXPIRY_HOURS",
+                "value": "24"
+              },
+              {
+                "name": "JWT_REFRESH_EXPIRY_HOURS",
+                "value": "168"
+              },
+              {
+                "name": "ARBITRUM_SEPOLIA_RPC",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "name": "__OWNER_APPROVED_RPC_SECRET__",
+                    "key": "__OWNER_APPROVED_RPC_SECRET_VERSION__"
+                  }
+                }
+              },
+              {
+                "name": "CHAIN_ID",
+                "value": "421614"
+              },
+              {
+                "name": "USDC_SEPOLIA_ADDRESS",
+                "value": "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d"
+              },
+              {
+                "name": "NEBULA_PAYMENT_CONTRACT",
+                "value": "__OWNER_APPROVED_CONTRACT_ADDRESS__"
+              },
+              {
+                "name": "CONTRACT_DEPLOYMENT_BLOCK",
+                "value": "__OWNER_APPROVED_CONTRACT_DEPLOYMENT_BLOCK__"
+              },
+              {
+                "name": "CONTRACT_OWNER_ADDRESS",
+                "value": "__OWNER_APPROVED_CONTRACT_OWNER_ADDRESS__"
+              },
+              {
+                "name": "CONTRACT_VERIFIER_ADDRESS",
+                "value": "__OWNER_APPROVED_CONTRACT_VERIFIER_ADDRESS__"
+              },
+              {
+                "name": "STORAGE_ADAPTER",
+                "value": "s3"
+              },
+              {
+                "name": "R2_ACCOUNT_ID",
+                "value": "__OWNER_APPROVED_R2_ACCOUNT_ID__"
+              },
+              {
+                "name": "R2_BUCKET_NAME",
+                "value": "__OWNER_APPROVED_R2_BUCKET_NAME__"
+              },
+              {
+                "name": "R2_ACCESS_KEY_ID",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "name": "__OWNER_APPROVED_R2_ACCESS_KEY_SECRET__",
+                    "key": "__OWNER_APPROVED_R2_ACCESS_KEY_SECRET_VERSION__"
+                  }
+                }
+              },
+              {
+                "name": "R2_SECRET_ACCESS_KEY",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "name": "__OWNER_APPROVED_R2_SECRET_KEY_SECRET__",
+                    "key": "__OWNER_APPROVED_R2_SECRET_KEY_SECRET_VERSION__"
+                  }
+                }
+              },
+              {
+                "name": "OBJECT_STORAGE_REGION",
+                "value": "auto"
+              },
+              {
+                "name": "OBJECT_STORAGE_PREFIX",
+                "value": "__OWNER_APPROVED_STORAGE_PREFIX__"
+              },
+              {
+                "name": "OBJECT_STORAGE_CAPABILITY_TTL_SECONDS",
+                "value": "300"
+              }
+            ],
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "512Mi"
+              }
+            },
+            "startupProbe": {
+              "httpGet": {
+                "path": "/ready",
+                "port": 8080
+              },
+              "initialDelaySeconds": 0,
+              "timeoutSeconds": 2,
+              "periodSeconds": 10,
+              "failureThreshold": 6
+            }
+          }
+        ]
+      }
+    },
+    "traffic": [
+      {
+        "latestRevision": true,
+        "percent": 100
+      }
+    ]
+  }
+}

@@ -1,0 +1,263 @@
+"""Static and non-mutating behavior contracts for the owner deployment wizards."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+FOUNDATION = ROOT / "scripts/gcp004_foundation_deploy_wizard.sh"
+CUTOVER = ROOT / "scripts/gcp005_vercel_browser_cutover_wizard.sh"
+LAPTOP = ROOT / "scripts/gcp006_laptop_demo_runtime_wizard.sh"
+LIBRARY = ROOT / "scripts/lib/nebula_owner_wizard.sh"
+RENDERER = ROOT / "scripts/render_gcp_demo_config.py"
+VALIDATOR = ROOT / "scripts/validate_gcp_demo_config.py"
+WIZARDS = (FOUNDATION, CUTOVER, LAPTOP)
+
+
+def run_wizard(
+    path: Path, *arguments: str, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", str(path), *arguments],
+        cwd=ROOT,
+        env={**os.environ, **(env or {})},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+class SharedWizardContractTest(unittest.TestCase):
+    def test_each_wizard_exposes_non_mutating_check_plan_and_help(self) -> None:
+        for wizard in WIZARDS:
+            for mode in ("--check", "--plan", "--help"):
+                result = run_wizard(wizard, mode)
+                self.assertEqual(
+                    result.returncode, 0, f"{wizard.name} {mode}: {result.stderr}"
+                )
+
+    def test_shared_library_refuses_xtrace_and_protects_secret_files(self) -> None:
+        text = LIBRARY.read_text(encoding="utf-8")
+        self.assertIn('if [[ "$-" == *x* ]]', text)
+        self.assertRegex(text, r"read\s+-rs")
+        self.assertIn('chmod 600 "$path"', text)
+        self.assertIn("umask 077", text)
+        self.assertNotRegex(
+            text,
+            r"(?:echo|printf).*\$\{?[^}\n]*(?:SECRET|TOKEN|PRIVATE_KEY|DATABASE_URL)",
+        )
+
+    def test_run_modes_require_explicit_interactive_terminal(self) -> None:
+        for wizard in WIZARDS:
+            result = run_wizard(wizard, "--run")
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("interactive terminal", result.stderr)
+
+
+class FoundationWizardContractTest(unittest.TestCase):
+    def test_foundation_plan_has_all_thirteen_stages_in_order(self) -> None:
+        result = run_wizard(FOUNDATION, "--plan")
+        stages = (
+            "repository integrity and immutable source",
+            "project, region, billing, and cost-risk acknowledgement",
+            "budget alerts and cost review",
+            "required Google API enablement",
+            "private Cloudflare R2 bucket creation",
+            "bucket-scoped R2 object read/write token",
+            "runtime service account and least-privilege IAM",
+            "numbered Secret Manager secrets",
+            "immutable image build, scan, upload, and digest",
+            "API-only Cloud Run deployment",
+            "direct public /live and database-backed /ready",
+            "Cloud Run and laptop private-object exchange",
+            "stop before Vercel, DNS, or browser routing",
+        )
+        positions = [result.stdout.index(stage) for stage in stages]
+        self.assertEqual(positions, sorted(positions))
+
+    def test_foundation_has_official_docs_before_owner_capture_and_confirmation_gates(
+        self,
+    ) -> None:
+        text = FOUNDATION.read_text(encoding="utf-8")
+        for domain in (
+            "console.cloud.google.com",
+            "developers.cloudflare.com",
+            "cloud.google.com",
+        ):
+            self.assertIn(domain, text)
+        self.assertLess(text.index("open_url"), text.index("ask_public"))
+        self.assertIn("confirm_action", text)
+        self.assertIn("ask_secret", text)
+
+    def test_foundation_cannot_mutate_vercel_or_enable_cloud_run_runners(self) -> None:
+        text = FOUNDATION.read_text(encoding="utf-8")
+        self.assertNotRegex(text, r"(?m)^\s*(?:run_command\s+)?vercel\b")
+        self.assertNotIn("vercel deploy", text)
+        self.assertIn("RUNNERS_ENABLED=false", text)
+        self.assertIn("STORAGE_ADAPTER=s3", text)
+        self.assertNotRegex(text, r"RUNNERS_ENABLED=(?:true|1)")
+        self.assertIn("validate_gcp_demo_config.py", text)
+
+    def test_foundation_refuses_placeholders_file_storage_and_mutable_images(
+        self,
+    ) -> None:
+        text = FOUNDATION.read_text(encoding="utf-8")
+        self.assertIn("reject_placeholder", text)
+        self.assertIn("require_exact STORAGE_ADAPTER s3", text)
+        self.assertIn("require_exact RUNNERS_ENABLED false", text)
+        self.assertRegex(text, r"sha256:")
+        self.assertIn("public R2 access must remain disabled", text)
+
+
+class CutoverWizardContractTest(unittest.TestCase):
+    def test_cutover_plan_preserves_same_origin_browser_auth(self) -> None:
+        result = run_wizard(CUTOVER, "--plan")
+        for statement in (
+            "GCP-004 sanitized direct acceptance evidence",
+            "exact frontend production origin",
+            "same-origin /api/v1/* rewrite",
+            "owner confirmation before Vercel mutation",
+            "Vercel frontend deployment",
+            "real browser authentication acceptance",
+            "immediate frontend routing rollback",
+            "module-memory access token",
+            "HttpOnly, Secure, SameSite=Strict",
+            "Origin == FRONTEND_URL",
+        ):
+            self.assertIn(statement, result.stdout)
+
+    def test_cutover_refuses_without_foundation_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = run_wizard(
+                CUTOVER,
+                "--validate-evidence",
+                env={"NEBULA_GCP_STATE_DIR": directory},
+            )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("GCP-004 sanitized direct acceptance evidence", result.stderr)
+
+    def test_cutover_uses_reviewed_rewrite_template_and_never_cross_origin_design(
+        self,
+    ) -> None:
+        text = CUTOVER.read_text(encoding="utf-8")
+        self.assertIn("deploy/gcp-demo/vercel-rewrite.template.json", text)
+        self.assertIn("validate_gcp_demo_config.py", text)
+        self.assertNotIn("localStorage", text)
+        self.assertNotIn("sessionStorage", text)
+
+
+class LaptopWizardContractTest(unittest.TestCase):
+    def test_laptop_plan_orders_validation_prepare_start_and_stop(self) -> None:
+        result = run_wizard(LAPTOP, "--plan")
+        stages = (
+            "local Docker, Python, Node, and clean configuration",
+            "Cloud Run, Supabase, private R2, RPC, and contract connectivity",
+            "separate worker, GPU provider, and Verifier identities",
+            "prepare worker and five controlled runner commands",
+            "confirm immediately before each process start",
+            "safe status, stop, and cleanup",
+            "no continuous runners on Cloud Run",
+        )
+        positions = [result.stdout.index(stage) for stage in stages]
+        self.assertEqual(positions, sorted(positions))
+
+    def test_laptop_does_not_start_processes_in_check_or_plan_modes(self) -> None:
+        text = LAPTOP.read_text(encoding="utf-8")
+        self.assertIn("Processes are prepared but not started by default", text)
+        self.assertIn("confirm_action", text)
+        self.assertIn("receipt", text)
+        self.assertIn("assignment", text)
+        self.assertIn("settlement", text)
+        self.assertIn("event", text)
+        self.assertIn("reconciliation", text)
+        self.assertNotRegex(
+            text,
+            r"(?m)^\s*(?:python|uv|docker compose).*(?:runner|worker).*(?:&|--detach)\s*$",
+        )
+
+
+class RenderedConfigurationContractTest(unittest.TestCase):
+    def test_renderer_fails_closed_then_produces_validator_accepted_service(
+        self,
+    ) -> None:
+        values = {
+            "CLOUD_RUN_SERVICE": "nebula-demo-api",
+            "RUNTIME_SERVICE_ACCOUNT": "nebula-api@example-project.iam.gserviceaccount.com",
+            "IMAGE_DIGEST": "us-central1-docker.pkg.dev/example-project/nebula/api@sha256:"
+            + "a" * 64,
+            "FRONTEND_URL": "https://frontend.example.com",
+            "DATABASE_SECRET_VERSION": "1",
+            "JWT_SECRET_VERSION": "2",
+            "RPC_SECRET_VERSION": "3",
+            "R2_ACCESS_KEY_SECRET_VERSION": "4",
+            "R2_SECRET_KEY_SECRET_VERSION": "5",
+            "NEBULA_PAYMENT_CONTRACT": "0x" + "11" * 20,
+            "CONTRACT_DEPLOYMENT_BLOCK": "123456",
+            "CONTRACT_OWNER_ADDRESS": "0x" + "22" * 20,
+            "CONTRACT_VERIFIER_ADDRESS": "0x" + "33" * 20,
+            "R2_ACCOUNT_ID": "a" * 32,
+            "R2_BUCKET_NAME": "nebula-demo-private",
+            "OBJECT_STORAGE_PREFIX": "demo",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "config"
+            output = Path(directory) / "service.json"
+            config.mkdir(mode=0o700)
+            refused = subprocess.run(
+                [
+                    "python3",
+                    str(RENDERER),
+                    "--config-dir",
+                    str(config),
+                    "--output",
+                    str(output),
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(refused.returncode, 0)
+            for name, value in values.items():
+                path = config / name
+                path.write_text(value, encoding="utf-8")
+                path.chmod(0o600)
+            rendered = subprocess.run(
+                [
+                    "python3",
+                    str(RENDERER),
+                    "--config-dir",
+                    str(config),
+                    "--output",
+                    str(output),
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(rendered.returncode, 0, rendered.stderr)
+            service = json.loads(output.read_text(encoding="utf-8"))
+            environment = {
+                item["name"]: item
+                for item in service["spec"]["template"]["spec"]["containers"][0]["env"]
+            }
+            self.assertEqual(environment["RUNNERS_ENABLED"]["value"], "false")
+            self.assertEqual(environment["STORAGE_ADAPTER"]["value"], "s3")
+            validated = subprocess.run(
+                ["python3", str(VALIDATOR), "--service", str(output), "--service-only"],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(validated.returncode, 0, validated.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()

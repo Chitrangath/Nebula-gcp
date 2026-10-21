@@ -1,0 +1,22 @@
+{
+  "network": "arbitrum-sepolia",
+  "chain_id": 421614,
+  "contract_address": "0xbD0A2f65ae2C67A313d2883cAed5029A3275a599",
+  "usdc_address": "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d",
+  "owner_address": "0xf186F4958A1bf6843148Ed9aC737FEb35cCCF5dc",
+  "verifier_address": "0x3816323AB50dbB47fa175f1A49f26FdBE143B567",
+  "deployment_transaction_hash": "0xaf2a0073e7cd59bc5ab503c19157b55bbf47fe37dc8a500c009c0e4f995ea0a0",
+  "deployment_block": 312679343,
+  "deployed_at_utc": "2026-09-25T19:28:14Z",
+  "source_commit": "33006ebf6563916eb5d55b974042ddf1788a7be3",
+  "abi_sha256": "57a205796f5ea3e9189e281af31dcdc337386075f1ae8060a0d34fe3c5aaf0e9",
+  "runtime_template_sha256": "54b4029baa8f1487adda2c3f7a676b54524ec8a591b61f843e63d349aa58faef",
+  "on_chain_code_sha256": "c3a04e93e7efcd2010b6a5bdbb24ff03d60936363bb37cd24d7b899d2326ec4a",
+  "compiler": "0.8.20+commit.a1b79de6",
+  "optimizer_enabled": true,
+  "optimizer_runs": 200,
+  "via_ir": true,
+  "evm_version": "shanghai",
+  "explorer_url": "https://sepolia.arbiscan.io/address/0xbD0A2f65ae2C67A313d2883cAed5029A3275a599",
+  "source_verified": true
+}

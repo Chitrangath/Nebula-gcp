@@ -1,0 +1,62 @@
+{
+  "abi_sha256": "57a205796f5ea3e9189e281af31dcdc337386075f1ae8060a0d34fe3c5aaf0e9",
+  "compiler": {
+    "version": "0.8.20+commit.a1b79de6"
+  },
+  "event_signatures": {
+    "JobCreated(bytes32,address,bytes32,uint256,uint256)": "0x661484c35948e424b90382e7463e4871507cd574ba7ee91c8d7df0b3285bd538",
+    "JobPriceUpdated(uint256,uint256)": "0xa65050c420ad3152bfdb2ecbb6572214744fe78d1ca3e072d929fe6796293368",
+    "JobSettled(bytes32,bool,uint256)": "0x7cb6e811be6a68bdbd4f98d2d3468d9f599c545a5c83c7018bf003b2df4687ba",
+    "MaxJobAmountUpdated(uint256,uint256)": "0xb04413bed827cd74e28bc7872863d1c1d4169bd716ed3dde1aaa29cb742e71e9",
+    "OwnershipTransferred(address,address)": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0",
+    "Paused(address)": "0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258",
+    "PaymentCredited(bytes32,address,uint256)": "0xa5e992597e8af5e5d6e49ebe1b0fdcccedd679c096b34f3ee437b4d529893b98",
+    "ProofSubmitted(bytes32,bytes32,bytes32,bytes32,address)": "0xb5c59a73bf682b2f2c1b0db27619997d270cd6c1c7f82a3b54def5cd5f37b0b4",
+    "ProviderAssigned(bytes32,address,bytes32,uint64)": "0x748ccb2ddf83ec17536b83e911af03caf7d6cc210f13e88525edc23af9631412",
+    "TimeoutRefundCredited(bytes32,address,uint256)": "0x5df37be6d36b0f5c47112889fd3ad75559cc6f8b19e1c7f6e85efdaa644f3e1c",
+    "Unpaused(address)": "0x5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa",
+    "VerifierUpdated(address,address)": "0x0243549a92b2412f7a3caf7a2e56d65b8821b91345363faa5f57195384065fcc",
+    "WithdrawalCompleted(address,uint256)": "0x1a39b9c5044b9f0ff56c5951e30c1ebe24911353aafcceb9250e83a24fe158c4"
+  },
+  "function_selectors": {
+    "assignProvider(bytes32,address,bytes32,uint64)": "0x4e583fbf",
+    "createJob(bytes32,bytes32)": "0x57251cc4",
+    "getJob(bytes32)": "0xf729cf0d",
+    "getPendingWithdrawal(address)": "0x7ee8b2f8",
+    "requestTimeoutRefund(bytes32)": "0xc2a080b9",
+    "submitProof(bytes32,bytes32,bytes32,bytes32)": "0x3521e00d",
+    "verifyJob(bytes32,bool)": "0xd3164c32",
+    "withdraw()": "0x3ccfd60b"
+  },
+  "job_state": {
+    "Assigned": 2,
+    "Created": 1,
+    "None": 0,
+    "ProofSubmitted": 3,
+    "Refunded": 5,
+    "Settled": 4
+  },
+  "runtime_bytecode_sha256": "54b4029baa8f1487adda2c3f7a676b54524ec8a591b61f843e63d349aa58faef",
+  "settings": {
+    "compilationTarget": {
+      "src/NebulaVerifiableAI.sol": "NebulaVerifiableAI"
+    },
+    "evmVersion": "shanghai",
+    "libraries": {},
+    "metadata": {
+      "bytecodeHash": "ipfs"
+    },
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "remappings": [
+      "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+      "erc4626-tests/=lib/openzeppelin-contracts/lib/erc4626-tests/",
+      "forge-std/=lib/openzeppelin-contracts/lib/forge-std/src/",
+      "halmos-cheatcodes/=lib/openzeppelin-contracts/lib/halmos-cheatcodes/src/",
+      "openzeppelin-contracts/=lib/openzeppelin-contracts/"
+    ],
+    "viaIR": true
+  }
+}
