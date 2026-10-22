@@ -1,48 +1,28 @@
-"""Semantic checks for the zero-cost OCI deployment interface."""
+"""Semantic checks for the GCP demo deployment interface."""
 
 import json
-import os
-import pathlib
-import subprocess
+from pathlib import Path
+from typing import Any
 
 import pytest
 
-BACKEND_ROOT = pathlib.Path(__file__).parents[1]
+BACKEND_ROOT = Path(__file__).parents[1]
 REPOSITORY_ROOT = BACKEND_ROOT.parent
-OCI_ROOT = REPOSITORY_ROOT / "deploy" / "oci"
-OWNER_DEMO_WIZARD = REPOSITORY_ROOT / "scripts" / "be002_owner_operated_demo_wizard.sh"
+GCP_ROOT = REPOSITORY_ROOT / "deploy" / "gcp-demo"
+SERVICE_TEMPLATE = GCP_ROOT / "cloud-run-service.template.yaml"
+FOUNDATION_WIZARD = REPOSITORY_ROOT / "scripts" / "gcp004_foundation_deploy_wizard.sh"
+LAPTOP_RUNTIME_WIZARD = REPOSITORY_ROOT / "scripts" / "gcp006_laptop_demo_runtime_wizard.sh"
+pytestmark = pytest.mark.asyncio
 
 
-def _normalized_compose() -> dict[str, object]:
-    """Return Docker Compose's normalized model instead of inspecting YAML text."""
-    environment = os.environ.copy()
-    environment["BACKEND_ENV_FILE"] = str(OCI_ROOT / "backend.env.example")
-    result = subprocess.run(
-        [
-            "docker",
-            "compose",
-            "--env-file",
-            str(OCI_ROOT / ".env.example"),
-            "-f",
-            str(OCI_ROOT / "compose.yaml"),
-            "--profile",
-            "runners",
-            "config",
-            "--format",
-            "json",
-        ],
-        check=True,
-        capture_output=True,
-        env=environment,
-        text=True,
-    )
-    return json.loads(result.stdout)
+def _cloud_run_service() -> dict[str, Any]:
+    """Load the JSON-compatible Cloud Run service template."""
+    return json.loads(SERVICE_TEMPLATE.read_text(encoding="utf-8"))
 
 
-@pytest.mark.asyncio
-async def test_container_runs_locked_backend_as_non_root():
-    dockerfile = (BACKEND_ROOT / "Dockerfile").read_text()
-    dockerignore = (BACKEND_ROOT / ".dockerignore").read_text().splitlines()
+async def test_container_runs_locked_backend_as_non_root() -> None:
+    dockerfile = (BACKEND_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    dockerignore = (BACKEND_ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
 
     assert "uv sync --frozen --no-dev" in dockerfile
     assert "USER app" in dockerfile
@@ -53,88 +33,72 @@ async def test_container_runs_locked_backend_as_non_root():
     assert ".env.*" in dockerignore
 
 
-@pytest.mark.asyncio
-async def test_oci_compose_keeps_api_private_and_defines_every_runtime_runner():
-    compose = _normalized_compose()
-    services = compose["services"]
-    api = services["api"]
-    caddy = services["caddy"]
+async def test_cloud_run_profile_is_api_only_and_scales_to_zero() -> None:
+    service = _cloud_run_service()
+    revision = service["spec"]["template"]
+    annotations = revision["metadata"]["annotations"]
+    containers = revision["spec"]["containers"]
+    container = containers[0]
+    environment = {item["name"]: item for item in container["env"]}
 
-    assert api["expose"] == ["8000"]
-    assert "ports" not in api
-    assert caddy["ports"] == [
-        {"mode": "ingress", "target": 80, "published": "80", "protocol": "tcp"},
-        {"mode": "ingress", "target": 443, "published": "443", "protocol": "tcp"},
-    ]
-    assert "/ready" in " ".join(api["healthcheck"]["test"])
-
-    for runner in ("receipts", "assignment", "settlement", "events", "reconciliation"):
-        service = services[f"runner-{runner}"]
-        assert service["command"] == ["uv", "run", "--no-sync", "python", "-m", "app.runners", runner]
-        assert service["profiles"] == ["runners"]
-        assert service["restart"] == "unless-stopped"
-
-    expected_environment = {"DATABASE_URL", "JWT_SECRET", "FRONTEND_URL", "RUNNERS_ENABLED"}
-    for name, service in services.items():
-        if name != "caddy":
-            assert expected_environment <= service["environment"].keys()
+    assert service["kind"] == "Service"
+    assert annotations["autoscaling.knative.dev/minScale"] == "0"
+    assert annotations["autoscaling.knative.dev/maxScale"] == "2"
+    assert annotations["run.googleapis.com/cpu-throttling"] == "true"
+    assert [item["name"] for item in containers] == ["api"]
+    assert environment["RUNNERS_ENABLED"]["value"] == "false"
+    assert environment["STORAGE_ADAPTER"]["value"] == "s3"
+    assert container["resources"]["limits"] == {"cpu": "1", "memory": "512Mi"}
 
 
-@pytest.mark.asyncio
-async def test_oci_proxy_terminates_tls_and_forwards_only_to_internal_api():
-    compose = _normalized_compose()
-    caddyfile = (OCI_ROOT / "Caddyfile").read_text()
+async def test_cloud_run_uses_digest_placeholder_secrets_and_readiness() -> None:
+    service = _cloud_run_service()
+    revision_spec = service["spec"]["template"]["spec"]
+    container = revision_spec["containers"][0]
+    environment = {item["name"]: item for item in container["env"]}
 
-    assert "caddy" in compose["services"]
-    assert "api:8000" in caddyfile
-    assert "{$BACKEND_HOSTNAME}" in caddyfile
-    assert "header" in caddyfile
-    assert "Strict-Transport-Security" in caddyfile
+    assert container["image"] == "__OWNER_APPROVED_IMAGE_DIGEST__"
+    assert revision_spec["serviceAccountName"] == "__OWNER_APPROVED_RUNTIME_SERVICE_ACCOUNT__"
+    assert "${PORT:?Cloud Run PORT is required}" in " ".join(container["args"])
+    assert container["ports"] == [{"name": "http1", "containerPort": 8080}]
+    assert container["startupProbe"]["httpGet"] == {"path": "/ready", "port": 8080}
+    for name in (
+        "DATABASE_URL",
+        "JWT_SECRET",
+        "ARBITRUM_SEPOLIA_RPC",
+        "R2_ACCESS_KEY_ID",
+        "R2_SECRET_ACCESS_KEY",
+    ):
+        assert "value" not in environment[name]
+        assert "secretKeyRef" in environment[name]["valueFrom"]
 
 
-@pytest.mark.asyncio
-async def test_fly_configuration_is_removed_from_zero_cost_deployment():
+async def test_legacy_oci_and_fly_deployment_profiles_are_absent() -> None:
+    assert not (REPOSITORY_ROOT / "deploy" / "oci").exists()
     assert not (BACKEND_ROOT / "fly.toml").exists()
 
 
-@pytest.mark.asyncio
-async def test_owner_wizard_refuses_paid_oci_resources_and_preserves_secret_files():
-    wizard = (REPOSITORY_ROOT / "scripts" / "be002_production_auth_wizard.sh").read_text()
+async def test_foundation_wizard_preserves_cost_secret_and_runtime_guards() -> None:
+    wizard = FOUNDATION_WIZARD.read_text(encoding="utf-8")
 
-    assert "Always Free eligible" in wizard
-    assert "Do not click Upgrade" in wizard
-    assert "exactly 1 OCPU and 6 GB RAM" in wizard
-    assert "OCI_CPUS == 1" in wizard
-    assert "OCI_MEMORY_KB >= 5500000" in wizard
-    assert "OCI_MEMORY_KB <= 6500000" in wizard
-    assert "2 OCPUs and 12 GB RAM" not in wizard
-    assert "backend.env" in wizard
+    assert "I-ACCEPT-COST-RISK" in wizard
+    assert "budgets are not hard caps" in wizard
+    assert "BUDGET-REVIEWED" in wizard
+    assert "numbered Secret Manager" in wizard
+    assert "roles/secretmanager.secretAccessor" in wizard
+    assert "require_digest_image" in wizard
+    assert "RUNNERS_ENABLED=false" in wizard
+    assert "PUBLIC_R2=false" in wizard
+    assert "DELETE-DATABASE-PROBE" in wizard
+
+
+async def test_laptop_runtime_is_supervised_reversible_and_not_cloud_hosted() -> None:
+    wizard = LAPTOP_RUNTIME_WIZARD.read_text(encoding="utf-8")
+
+    assert "--status | --stop" in wizard
     assert "chmod 600" in wizard
-    assert "RUNNERS_ENABLED='false'" in wizard
-    assert "flyctl" not in wizard
-    assert "fly.toml" not in wizard
-
-
-@pytest.mark.asyncio
-async def test_owner_operated_demo_wizard_is_an_isolated_reversible_profile():
-    """The temporary laptop route must not weaken or replace the OCI profile."""
-    wizard = OWNER_DEMO_WIZARD.read_text()
-
-    assert "TOTAL_STAGES=7" in wizard
-    assert "nebula-owner-demo" in wizard
-    assert "--project-name \"$COMPOSE_PROJECT\"" in wizard
-    assert "deploy/oci/compose.yaml" in wizard
-    assert "RUNNERS_ENABLED='false'" in wizard
-    assert "backend.env" in wizard
-    assert "chmod 600" in wizard
-    assert "DuckDNS" in wizard
-    assert "CGNAT" in wizard
-    assert "Cloudflare Quick Tunnels" in wizard
-    assert 'DUCKDNS_DOMAIN="${BACKEND_HOSTNAME%.duckdns.org}"' in wizard
-    assert 'url = "https://www.duckdns.org/update?domains=%s&token=%s&ip=%s"' in wizard
-    assert 'TOKEN_ENCODED=$(urlencode "$DUCKDNS_TOKEN")' in wizard
-    assert "Get-Clipboard -Raw" in wizard
-    assert "DuckDNS rejected the update" in wizard
-    assert "frontend/vercel.json" in wizard
-    assert '"source": "/api/v1/:path*"' in wizard
-    assert "be002_production_auth_wizard.sh" in wizard
+    assert "RUNNERS_ENABLED false" in wizard
+    assert "START-${name^^}" in wizard
+    assert "kill -TERM" in wizard
+    assert "CLOUD-RUN-API-ONLY" in wizard
+    assert "Controlled processes are laptop-only" in wizard

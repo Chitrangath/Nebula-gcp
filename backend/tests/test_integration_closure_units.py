@@ -25,9 +25,14 @@ ROOT = Path(__file__).parents[2]
 pytestmark = pytest.mark.asyncio
 
 
-async def test_backend_abi_is_exactly_generated_from_foundry_artifact():
-    artifact = json.loads((ROOT / "contracts/out/NebulaVerifiableAI.sol/NebulaVerifiableAI.json").read_text())
-    assert load_abi() == artifact["abi"]
+async def test_backend_abi_matches_preserved_deployment_manifest() -> None:
+    deployment = json.loads((ROOT / "contracts/deployments/arbitrum-sepolia.json").read_text(encoding="utf-8"))
+    metadata = json.loads((ROOT / "backend/app/nebula_artifact.json").read_text(encoding="utf-8"))
+    canonical_abi = json.dumps(load_abi(), sort_keys=True, separators=(",", ":"))
+    abi_sha256 = hashlib.sha256(canonical_abi.encode()).hexdigest()
+
+    assert abi_sha256 == deployment["abi_sha256"]
+    assert abi_sha256 == metadata["abi_sha256"]
 
 
 async def test_canonical_function_and_event_shapes():

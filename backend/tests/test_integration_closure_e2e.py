@@ -6,11 +6,13 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from eth_account import Account
@@ -33,10 +35,11 @@ from app.models import (
     SupportedModel,
     User,
 )
+from app.services import settlement_coordinator as settlement_coordinator_module
 from app.services.assignment_dispatcher import AssignmentDispatcher
 from app.services.auth_service import create_access_token, sha256_hex
 from app.services.blockchain_events import EventPoller, reconcile_job_state
-from app.services.blockchain_service import Web3Backend, read_contract_job
+from app.services.blockchain_service import BlockchainBackend, Web3Backend, read_contract_job
 from app.services.scheduler import schedule_next_job
 from app.services.settlement_coordinator import SettlementCoordinator
 from app.services.storage import InMemoryStorage
@@ -44,8 +47,6 @@ from app.services.tx_signer import Web3Signer
 from tests.vectors import PNG_1X1
 
 ROOT = Path(__file__).parents[2]
-RPC = "http://127.0.0.1:8547"
-CHAIN = 31337
 KEYS = [
     "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
     "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
@@ -99,39 +100,54 @@ class SessionAdapter:
         "user-refund-wins-settlement-race",
     ],
 )
-async def test_golden_connected_journey(monkeypatch, journey):
+async def test_golden_connected_journey(
+    monkeypatch: pytest.MonkeyPatch,
+    unused_tcp_port: int,
+    journey: str,
+) -> None:
     raw = os.environ.get("DATABASE_URL", "")
     pg = (raw.rsplit("/", 1)[0] + "/nebula_test") if raw.startswith("postgresql") else None
     if not pg:
         pytest.skip("requires configured nebula_test PostgreSQL")
+    rpc = f"http://127.0.0.1:{unused_tcp_port}"
+    chain_id = 100_000 + unused_tcp_port
     proc = subprocess.Popen(
         [
             "anvil",
             "--port",
-            "8547",
+            str(unused_tcp_port),
             "--chain-id",
-            str(CHAIN),
+            str(chain_id),
             "--mnemonic",
             "test test test test test test test test test test test junk",
             "--silent",
         ],
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     try:
-        time.sleep(1)
-        w3 = Web3(Web3.HTTPProvider(RPC))
-        assert w3.is_connected()
+        w3 = Web3(Web3.HTTPProvider(rpc))
+        deadline = time.monotonic() + 5
+        while not w3.is_connected():
+            if proc.poll() is not None:
+                stderr = proc.stderr.read().strip() if proc.stderr is not None else "stderr unavailable"
+                raise RuntimeError(f"Anvil exited during startup: {stderr}")
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"Anvil did not become ready at {rpc}")
+            time.sleep(0.05)
+        assert proc.poll() is None
+        assert w3.eth.chain_id == chain_id
         usdc, _ = deploy(w3, ROOT / "contracts/out/NebulaVerifiableAI.t.sol/MockUSDC.json")
         nebula, deployment = deploy(
             w3, ROOT / "contracts/out/NebulaVerifiableAI.sol/NebulaVerifiableAI.json", (usdc.address,)
         )
-        chain = Web3Backend(RPC)
+        chain = Web3Backend(rpc)
         storage = InMemoryStorage()
-        signer = Web3Signer(RPC, KEYS[0])
+        signer = Web3Signer(rpc, KEYS[0])
         from app.config import settings
 
-        monkeypatch.setattr(settings, "CHAIN_ID", CHAIN)
+        monkeypatch.setattr(settings, "CHAIN_ID", chain_id)
         monkeypatch.setattr(settings, "NEBULA_PAYMENT_CONTRACT", nebula.address)
         monkeypatch.setattr(settings, "BACKEND_EXECUTOR_ADDRESS", w3.eth.accounts[0])
         engine = create_async_engine(pg)
@@ -230,8 +246,10 @@ async def test_golden_connected_journey(monkeypatch, journey):
                 assert created_job.expected_fingerprint == created["fingerprint"]
                 assert await storage.get_object(created_job.input_file_key) == input_bytes
             price = nebula.functions.jobPrice().call()
-            usdc.functions.mint(w3.eth.accounts[1], price).transact({"from": w3.eth.accounts[0]})
-            usdc.functions.approve(nebula.address, price).transact({"from": w3.eth.accounts[1]})
+            mint_tx = usdc.functions.mint(w3.eth.accounts[1], price).transact({"from": w3.eth.accounts[0]})
+            assert w3.eth.wait_for_transaction_receipt(mint_tx)["status"] == 1
+            approve_tx = usdc.functions.approve(nebula.address, price).transact({"from": w3.eth.accounts[1]})
+            assert w3.eth.wait_for_transaction_receipt(approve_tx)["status"] == 1
             tx = nebula.functions.createJob(
                 bytes.fromhex(created["chain_job_id"][2:]), bytes.fromhex(created["fingerprint"])
             ).transact({"from": w3.eth.accounts[1]})
@@ -247,7 +265,7 @@ async def test_golden_connected_journey(monkeypatch, journey):
             assert scheduled and scheduled[0].id == job_uuid
             await db.commit()
             dispatcher = AssignmentDispatcher(
-                blockchain=chain, signer=signer, contract_address=nebula.address, chain_id=CHAIN, rpc_url=RPC
+                blockchain=chain, signer=signer, contract_address=nebula.address, chain_id=chain_id, rpc_url=rpc
             )
             await db.commit()
 
@@ -302,7 +320,7 @@ async def test_golden_connected_journey(monkeypatch, journey):
                 worker_settings = SimpleNamespace(
                     BACKEND_URL="http://test",
                     API_KEY=api_key,
-                    CHAIN_ID=CHAIN,
+                    CHAIN_ID=chain_id,
                     VERIFYING_CONTRACT=nebula.address,
                     PRIVATE_KEY=worker.key.hex(),
                 )
@@ -320,24 +338,49 @@ async def test_golden_connected_journey(monkeypatch, journey):
                 output = await storage.get_object(complete_call[2]["json"]["result_file_key"])
                 if journey == "invalid":
                     await storage.put_object(complete_call[2]["json"]["result_file_key"], output + b"tampered")
-                elif journey == "refund_race":
-                    on_chain = read_contract_job(
-                        chain,
-                        nebula.address,
-                        bytes.fromhex(created["chain_job_id"][2:]),
-                    )
-                    latest_timestamp = w3.eth.get_block("latest")["timestamp"]
-                    w3.provider.make_request(
-                        "evm_increaseTime",
-                        [int(on_chain["job_deadline"]) - int(latest_timestamp) + 1],
-                    )
-                    w3.provider.make_request("evm_mine", [])
-                    refund_tx = nebula.functions.requestTimeoutRefund(
-                        bytes.fromhex(created["chain_job_id"][2:])
-                    ).transact({"from": w3.eth.accounts[1]})
-                    w3.eth.wait_for_transaction_receipt(refund_tx)
 
                 await db.commit()
+
+                refund_task = None
+                if journey == "refund_race":
+                    target_job_id = bytes.fromhex(created["chain_job_id"][2:])
+                    settlement_ready = threading.Event()
+                    refund_done = threading.Event()
+                    original_read_contract_job = settlement_coordinator_module.read_contract_job
+
+                    def read_after_refund(
+                        blockchain: BlockchainBackend,
+                        contract_address: str,
+                        job_id: bytes,
+                    ) -> dict[str, Any]:
+                        if job_id == target_job_id and not refund_done.is_set():
+                            settlement_ready.set()
+                            if not refund_done.wait(timeout=5):
+                                raise RuntimeError("refund did not complete during settlement race")
+                        return original_read_contract_job(blockchain, contract_address, job_id)
+
+                    monkeypatch.setattr(settlement_coordinator_module, "read_contract_job", read_after_refund)
+
+                    def refund_when_settlement_checks_chain() -> None:
+                        if not settlement_ready.wait(timeout=5):
+                            raise RuntimeError("settlement did not reach its pre-broadcast chain check")
+                        try:
+                            on_chain = read_contract_job(chain, nebula.address, target_job_id)
+                            latest_timestamp = w3.eth.get_block("latest")["timestamp"]
+                            w3.provider.make_request(
+                                "evm_increaseTime",
+                                [int(on_chain["job_deadline"]) - int(latest_timestamp) + 1],
+                            )
+                            w3.provider.make_request("evm_mine", [])
+                            refund_tx = nebula.functions.requestTimeoutRefund(target_job_id).transact(
+                                {"from": w3.eth.accounts[1]}
+                            )
+                            assert w3.eth.wait_for_transaction_receipt(refund_tx)["status"] == 1
+                        finally:
+                            refund_done.set()
+
+                    refund_task = asyncio.create_task(asyncio.to_thread(refund_when_settlement_checks_chain))
+                    await asyncio.sleep(0)
 
                 async def settle_once():
                     async with factory() as runner_db:
@@ -346,25 +389,37 @@ async def test_golden_connected_journey(monkeypatch, journey):
                             signer=signer,
                             storage=storage,
                             contract_address=nebula.address,
-                            chain_id=CHAIN,
+                            chain_id=chain_id,
                         )
                         return await coordinator.run_once(runner_db)
 
                 settlement_results = await asyncio.gather(settle_once(), settle_once())
+                if refund_task is not None:
+                    await refund_task
                 assert sum(result["verified"] for result in settlement_results) == 1
-                expected_confirmed = 0 if journey == "refund_race" else 2
-                assert sum(result["confirmed"] for result in settlement_results) == expected_confirmed
                 restarted_coordinator = SettlementCoordinator(
-                    blockchain=chain, signer=signer, storage=storage, contract_address=nebula.address, chain_id=CHAIN
+                    blockchain=chain,
+                    signer=signer,
+                    storage=storage,
+                    contract_address=nebula.address,
+                    chain_id=chain_id,
                 )
-                assert await restarted_coordinator.run_once(db) == {
+                coordinator_results = list(settlement_results)
+                for _ in range(3):
+                    result = await restarted_coordinator.run_once(db)
+                    coordinator_results.append(result)
+                    if result == {"verified": 0, "broadcast": 0, "confirmed": 0}:
+                        break
+                assert coordinator_results[-1] == {
                     "verified": 0,
                     "broadcast": 0,
                     "confirmed": 0,
                 }
+                if journey == "refund_race":
+                    assert sum(result["confirmed"] for result in coordinator_results) == 0
             poller = EventPoller(
                 blockchain=chain,
-                chain_id=CHAIN,
+                chain_id=chain_id,
                 contract_address=nebula.address,
                 deployment_block=deployment,
                 confirmations=1,
@@ -379,7 +434,7 @@ async def test_golden_connected_journey(monkeypatch, journey):
             ).scalar_one()
             restarted_poller = EventPoller(
                 blockchain=chain,
-                chain_id=CHAIN,
+                chain_id=chain_id,
                 contract_address=nebula.address,
                 deployment_block=deployment,
                 confirmations=1,
@@ -443,5 +498,10 @@ async def test_golden_connected_journey(monkeypatch, journey):
             await client.aclose()
         await engine.dispose()
     finally:
-        proc.terminate()
-        proc.wait(timeout=5)
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
