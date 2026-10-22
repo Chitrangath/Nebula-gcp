@@ -11,7 +11,9 @@ readonly SERVICE_TEMPLATE="${NEBULA_WIZARD_REPO_ROOT}/deploy/gcp-demo/cloud-run-
 readonly REWRITE_TEMPLATE="${NEBULA_WIZARD_REPO_ROOT}/deploy/gcp-demo/vercel-rewrite.template.json"
 readonly VALIDATOR="${NEBULA_WIZARD_REPO_ROOT}/scripts/validate_gcp_demo_config.py"
 readonly RENDERER="${NEBULA_WIZARD_REPO_ROOT}/scripts/render_gcp_demo_config.py"
+readonly DB_PROBE_RENDERER="${NEBULA_WIZARD_REPO_ROOT}/scripts/render_gcp_db_unavailable_probe.py"
 readonly MATERIALIZED_SERVICE="${NEBULA_GCP_STATE_DIR}/cloud-run-service.owner.json"
+readonly MATERIALIZED_DB_PROBE="${NEBULA_GCP_STATE_DIR}/cloud-run-db-unavailable-probe.owner.json"
 
 repository_is_clean() {
   git -C "$NEBULA_WIZARD_REPO_ROOT" rev-parse --verify HEAD >/dev/null 2>&1 \
@@ -31,7 +33,7 @@ show_plan() {
     '  8/13 numbered Secret Manager secrets' \
     '  9/13 immutable image build, scan, upload, and digest review' \
     '  10/13 API-only Cloud Run deployment with RUNNERS_ENABLED=false and STORAGE_ADAPTER=s3' \
-    '  11/13 direct public /live and database-backed /ready acceptance' \
+    '  11/13 direct health plus isolated database-unavailable /ready=503 acceptance' \
     '  12/13 Cloud Run and laptop private-object exchange acceptance' \
     '  13/13 explicit stop before Vercel, DNS, or browser routing' \
     '' \
@@ -121,7 +123,7 @@ check_local() {
       && printf '  OK  %s is available\n' "$optional" \
       || printf '  WARN %s is required when the owner later executes --run\n' "$optional"
   done
-  for path in "$SERVICE_TEMPLATE" "$REWRITE_TEMPLATE" "$VALIDATOR" "$RENDERER"; do
+  for path in "$SERVICE_TEMPLATE" "$REWRITE_TEMPLATE" "$VALIDATOR" "$RENDERER" "$DB_PROBE_RENDERER"; do
     [[ -f "$path" ]] && printf '  OK  %s\n' "${path#"${NEBULA_WIZARD_REPO_ROOT}/"}" || { printf '  ERR missing %s\n' "$path" >&2; failed=1; }
   done
   repository_is_clean \
@@ -292,6 +294,34 @@ run_wizard() {
   confirm_action "RUN-DIRECT-HEALTH" "Run direct public liveness and database-backed readiness checks now?"
   run_command "check direct liveness" curl --fail --silent --show-error "${cloud_run_origin%/}/live"
   run_command "check database-backed readiness" curl --fail --silent --show-error "${cloud_run_origin%/}/ready"
+
+  local probe_service probe_origin probe_live_status probe_ready_status probe_failed=0
+  probe_service="${service_name}-db-probe"
+  if (( ${#probe_service} > 63 )); then
+    printf 'Refusing database probe because the derived service name exceeds 63 characters.\n' >&2
+    return 1
+  fi
+  python3 "$DB_PROBE_RENDERER" \
+    --service "$MATERIALIZED_SERVICE" \
+    --output "$MATERIALIZED_DB_PROBE" \
+    --probe-service "$probe_service"
+  confirm_action "DATABASE-FAILURE-PROBE" "Create an isolated, min-zero, max-one temporary Cloud Run service using the same image and an intentionally unreachable dummy database URL? It receives no production traffic and may incur a small charge."
+  run_command "deploy isolated database-unavailable probe" \
+    gcloud run services replace "$MATERIALIZED_DB_PROBE" --project "$project" --region "$region"
+  confirm_action "MAKE-DATABASE-PROBE-PUBLIC" "Temporarily allow unauthenticated invocation of the isolated probe so its /live and /ready responses can be tested?"
+  run_command "grant temporary public invocation to database probe" \
+    gcloud run services add-iam-policy-binding "$probe_service" --project "$project" --region "$region" --member=allUsers --role=roles/run.invoker
+  probe_origin=$(gcloud run services describe "$probe_service" --project "$project" --region "$region" --format='value(status.url)')
+  require_https_origin DATABASE_PROBE_ORIGIN "$probe_origin"
+  probe_live_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 15 "${probe_origin%/}/live") || probe_live_status="curl-error"
+  probe_ready_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 15 "${probe_origin%/}/ready") || probe_ready_status="curl-error"
+  [[ "$probe_live_status" == "200" ]] || { printf 'Database probe /live returned %s; expected 200.\n' "$probe_live_status" >&2; probe_failed=1; }
+  [[ "$probe_ready_status" == "503" ]] || { printf 'Database probe /ready returned %s; expected 503.\n' "$probe_ready_status" >&2; probe_failed=1; }
+  confirm_action "DELETE-DATABASE-PROBE" "Delete the isolated database-unavailable probe service now? Refusing leaves a billable resource, so do not continue without deletion."
+  run_command "delete isolated database-unavailable probe" \
+    gcloud run services delete "$probe_service" --project "$project" --region "$region" --quiet
+  (( probe_failed == 0 )) || return 1
+  printf 'Database-unavailable readiness gate passed: /live=200 and /ready=503.\n'
   save_value CLOUD_RUN_ORIGIN "$cloud_run_origin"
 
   stage 12 13 "Cloud Run and laptop private-object exchange acceptance"

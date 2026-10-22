@@ -15,6 +15,7 @@ CUTOVER = ROOT / "scripts/gcp005_vercel_browser_cutover_wizard.sh"
 LAPTOP = ROOT / "scripts/gcp006_laptop_demo_runtime_wizard.sh"
 LIBRARY = ROOT / "scripts/lib/nebula_owner_wizard.sh"
 RENDERER = ROOT / "scripts/render_gcp_demo_config.py"
+DB_PROBE_RENDERER = ROOT / "scripts/render_gcp_db_unavailable_probe.py"
 VALIDATOR = ROOT / "scripts/validate_gcp_demo_config.py"
 WIZARDS = (FOUNDATION, CUTOVER, LAPTOP)
 
@@ -108,7 +109,7 @@ class FoundationWizardContractTest(unittest.TestCase):
             "numbered Secret Manager secrets",
             "immutable image build, scan, upload, and digest",
             "API-only Cloud Run deployment",
-            "direct public /live and database-backed /ready",
+            "direct health plus isolated database-unavailable /ready=503",
             "Cloud Run and laptop private-object exchange",
             "stop before Vercel, DNS, or browser routing",
         )
@@ -147,6 +148,17 @@ class FoundationWizardContractTest(unittest.TestCase):
         self.assertIn("require_exact RUNNERS_ENABLED false", text)
         self.assertRegex(text, r"sha256:")
         self.assertIn("public R2 access must remain disabled", text)
+
+    def test_foundation_executes_and_removes_isolated_database_failure_probe(
+        self,
+    ) -> None:
+        text = FOUNDATION.read_text(encoding="utf-8")
+
+        self.assertIn("render_gcp_db_unavailable_probe.py", text)
+        self.assertIn("DATABASE-FAILURE-PROBE", text)
+        self.assertIn("DELETE-DATABASE-PROBE", text)
+        self.assertIn("expected 503", text)
+        self.assertIn("gcloud run services delete", text)
 
 
 class CutoverWizardContractTest(unittest.TestCase):
@@ -217,6 +229,67 @@ class LaptopWizardContractTest(unittest.TestCase):
 
 
 class RenderedConfigurationContractTest(unittest.TestCase):
+    def test_database_failure_probe_is_isolated_and_uses_the_same_image(self) -> None:
+        source = {
+            "apiVersion": "serving.knative.dev/v1",
+            "kind": "Service",
+            "metadata": {"name": "nebula-api", "annotations": {"run.googleapis.com/ingress": "all"}},
+            "spec": {
+                "template": {
+                    "metadata": {"annotations": {"autoscaling.knative.dev/minScale": "0", "autoscaling.knative.dev/maxScale": "2"}},
+                    "spec": {
+                        "containers": [{
+                            "name": "api",
+                            "image": "us-central1-docker.pkg.dev/project/nebula/api@sha256:" + "a" * 64,
+                            "env": [
+                                {"name": "DATABASE_URL", "valueFrom": {"secretKeyRef": {"name": "database", "key": "1"}}},
+                                {"name": "JWT_SECRET", "valueFrom": {"secretKeyRef": {"name": "jwt", "key": "1"}}},
+                            ],
+                            "startupProbe": {"httpGet": {"path": "/ready", "port": 8080}},
+                        }]
+                    },
+                },
+                "traffic": [{"latestRevision": True, "percent": 100}],
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            source_path = Path(directory) / "service.json"
+            output_path = Path(directory) / "probe.json"
+            source_path.write_text(json.dumps(source), encoding="utf-8")
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(DB_PROBE_RENDERER),
+                    "--service",
+                    str(source_path),
+                    "--output",
+                    str(output_path),
+                    "--probe-service",
+                    "nebula-api-db-probe",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            probe = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual(probe["metadata"]["name"], "nebula-api-db-probe")
+            container = probe["spec"]["template"]["spec"]["containers"][0]
+            self.assertEqual(container["image"], source["spec"]["template"]["spec"]["containers"][0]["image"])
+            self.assertEqual(container["startupProbe"]["httpGet"]["path"], "/live")
+            environment = {item["name"]: item for item in container["env"]}
+            self.assertEqual(
+                environment["DATABASE_URL"],
+                {"name": "DATABASE_URL", "value": "postgresql+asyncpg://probe:probe@127.0.0.1:1/unavailable"},
+            )
+            self.assertIn("valueFrom", environment["JWT_SECRET"])
+            self.assertEqual(
+                probe["spec"]["template"]["metadata"]["annotations"]["autoscaling.knative.dev/maxScale"],
+                "1",
+            )
+
     def test_renderer_fails_closed_then_produces_validator_accepted_service(
         self,
     ) -> None:

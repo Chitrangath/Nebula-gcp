@@ -18,7 +18,7 @@ WIZARD = ROOT / "scripts/gcp_demo_owner_wizard.sh"
 PRD = ROOT / "docs/NEBULA_PRD_v3.1.md"
 THREAT_MODEL = ROOT / "docs/security/GCP_DEMO_DEPLOYMENT_THREAT_MODEL.md"
 RUNBOOK = ROOT / "docs/runbooks/GCP_DEMO_HOST.md"
-FIXED_BASE = "cbc1a25bd912a7e0c421e741cc068563980e0aa9"
+FIXED_BASE = "main"
 SAFE_REPLACEMENTS = {
     "__OWNER_APPROVED_SERVICE_NAME__": "nebula-gcp-demo-api",
     "__OWNER_APPROVED_RUNTIME_SERVICE_ACCOUNT__": "nebula-api@example-project.iam.gserviceaccount.com",
@@ -365,13 +365,12 @@ class GcpDemoServiceContractTest(unittest.TestCase):
         changed = subprocess.run(
             [
                 "git",
-                "--git-dir=.git-local",
-                "--work-tree=.",
+                "-C",
+                str(ROOT),
                 "diff",
                 "--name-only",
-                FIXED_BASE,
+                f"{FIXED_BASE}...HEAD",
             ],
-            cwd=ROOT,
             check=True,
             capture_output=True,
             text=True,

@@ -37,6 +37,13 @@ Run deployment, direct `/live` and database-backed `/ready`, and one
 non-production fixture flow proving private input/model/result exchange between
 Cloud Run and the laptop Worker.
 
+The health gate also renders and deploys a separate temporary Cloud Run probe
+service from the same immutable image. The probe receives no production
+traffic, starts on `/live`, uses an intentionally unreachable dummy database
+URL, and must return `/live = 200` and `/ready = 503`. The owner separately
+confirms its creation, temporary public invocation, and deletion. The probe
+does not alter the production service or Supabase configuration.
+
 Direct storage acceptance uses only the existing authenticated worker
 interface. It records accepted-input and result SHA-256 values, never object
 bytes, credentials, cookies, access tokens, or presigned capability URLs. This
