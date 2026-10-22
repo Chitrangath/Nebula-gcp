@@ -37,6 +37,29 @@ nebula-ai/
 
 ## Quick Start
 
+### Ubuntu/WSL E2E setup
+
+Use the repeatable setup wizard to install and verify the complete local
+PostgreSQL + Anvil E2E toolchain. Inspect before allowing any changes:
+
+```bash
+./scripts/setup_e2e_wizard.sh --check
+./scripts/setup_e2e_wizard.sh --plan
+./scripts/setup_e2e_wizard.sh --install
+```
+
+After installation, reopen WSL if requested, rerun `--check`, and start the
+guarded verification workflow:
+
+```bash
+./scripts/setup_e2e_wizard.sh --verify
+```
+
+`--verify` runs the canonical local PostgreSQL + Anvil backend/contract E2E
+twice. It can additionally run the deployed browser-auth smoke when you provide
+an existing HTTPS frontend origin; it does not deploy or start the unfinished
+frontend application.
+
 ### Prerequisites
 - Node.js 24 LTS
 - Python 3.10+

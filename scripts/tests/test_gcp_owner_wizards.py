@@ -60,6 +60,41 @@ class SharedWizardContractTest(unittest.TestCase):
 
 
 class FoundationWizardContractTest(unittest.TestCase):
+    def test_foundation_bootstrap_is_interactive_and_owner_gated(self) -> None:
+        result = run_wizard(FOUNDATION, "--bootstrap")
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("interactive terminal", result.stderr)
+
+        text = FOUNDATION.read_text(encoding="utf-8")
+        self.assertIn("packages.cloud.google.com/apt", text)
+        self.assertIn("INSTALL-GCLOUD", text)
+        self.assertIn("GCLOUD-LOGIN", text)
+        self.assertIn("gcloud auth login --no-launch-browser", text)
+        self.assertGreaterEqual(text.count("install -o root -g root -m 0644"), 2)
+        self.assertLess(
+            text.index("repair existing Google Cloud apt signing-key permissions"),
+            text.index("refresh Ubuntu package metadata"),
+        )
+        self.assertNotIn("gcloud init", text)
+
+    def test_foundation_help_exposes_bootstrap_separately_from_deployment(self) -> None:
+        result = run_wizard(FOUNDATION, "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--bootstrap", result.stdout)
+        self.assertIn("--run", result.stdout)
+
+    def test_foundation_check_uses_the_active_repository_metadata(self) -> None:
+        result = run_wizard(FOUNDATION, "--check")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("Not a git repository", result.stderr)
+        self.assertRegex(
+            result.stdout,
+            r"worktree is (?:clean|dirty)",
+        )
+
     def test_foundation_plan_has_all_thirteen_stages_in_order(self) -> None:
         result = run_wizard(FOUNDATION, "--plan")
         stages = (

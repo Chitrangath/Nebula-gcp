@@ -7,10 +7,18 @@ Run only from the reviewed clean `feat/gcp-demo-host` branch:
 ```bash
 scripts/gcp004_foundation_deploy_wizard.sh --check
 scripts/gcp004_foundation_deploy_wizard.sh --plan
+scripts/gcp004_foundation_deploy_wizard.sh --bootstrap
 scripts/gcp004_foundation_deploy_wizard.sh --run
 ```
 
-`--run` requires an interactive terminal. It opens official documentation and
+Use `--bootstrap` only from an interactive Ubuntu/WSL terminal. It detects an
+existing Google Cloud CLI or, after an exact owner confirmation, installs it
+from Google's signed apt repository. It then separately asks before starting
+`gcloud auth login --no-launch-browser`, avoiding an unreliable browser callback
+into WSL, and repeats the non-mutating local check. Bootstrap does not
+select a project, enable an API, create a resource, or run the deployment.
+
+`--bootstrap` and `--run` require an interactive terminal. `--run` opens official documentation and
 dashboard pages before capturing values, stops for an exact typed confirmation
 before every external or billable action, and refuses a dirty source tree,
 placeholder configuration, mutable image reference, `FileStorage`, enabled

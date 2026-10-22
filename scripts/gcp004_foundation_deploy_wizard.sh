@@ -13,6 +13,11 @@ readonly VALIDATOR="${NEBULA_WIZARD_REPO_ROOT}/scripts/validate_gcp_demo_config.
 readonly RENDERER="${NEBULA_WIZARD_REPO_ROOT}/scripts/render_gcp_demo_config.py"
 readonly MATERIALIZED_SERVICE="${NEBULA_GCP_STATE_DIR}/cloud-run-service.owner.json"
 
+repository_is_clean() {
+  git -C "$NEBULA_WIZARD_REPO_ROOT" rev-parse --verify HEAD >/dev/null 2>&1 \
+    && [[ -z "$(git -C "$NEBULA_WIZARD_REPO_ROOT" status --porcelain --untracked-files=all)" ]]
+}
+
 show_plan() {
   printf '%s\n' \
     'GCP-004 owner-guided foundation and direct acceptance:' \
@@ -35,7 +40,76 @@ show_plan() {
 }
 
 show_help() {
-  printf 'Usage: %s --check | --plan | --run | --help\n' "${0##*/}"
+  printf 'Usage: %s --check | --plan | --bootstrap | --run | --help\n' "${0##*/}"
+}
+
+bootstrap_prerequisites() {
+  require_interactive_terminal
+
+  stage 1 3 "Ubuntu/WSL host and Google Cloud CLI prerequisite"
+  if [[ ! -r /etc/os-release ]]; then
+    printf 'Refusing bootstrap because /etc/os-release is unavailable.\n' >&2
+    return 1
+  fi
+  # shellcheck disable=SC1091
+  source /etc/os-release
+  if [[ "${ID:-}" != "ubuntu" ]]; then
+    printf 'Refusing automatic package installation on unsupported host ID=%s. Follow the official Google Cloud CLI installation guide.\n' "${ID:-unknown}" >&2
+    return 1
+  fi
+  printf 'Detected Ubuntu %s. This mode installs local tooling only; it creates no cloud resources.\n' "${VERSION_ID:-unknown}"
+
+  if command -v gcloud >/dev/null 2>&1; then
+    printf '  OK  %s\n' "$(gcloud version 2>/dev/null | head -n 1)"
+  else
+    open_url "https://cloud.google.com/sdk/docs/install"
+    confirm_action "INSTALL-GCLOUD" "Install Google Cloud CLI from Google's signed apt repository? This uses sudo and changes WSL system packages."
+    if [[ -f /usr/share/keyrings/cloud.google.gpg ]]; then
+      run_command "repair existing Google Cloud apt signing-key permissions" \
+        sudo chmod 0644 /usr/share/keyrings/cloud.google.gpg
+    fi
+    if [[ -f /etc/apt/sources.list.d/google-cloud-sdk.list ]]; then
+      run_command "repair existing Google Cloud repository-definition permissions" \
+        sudo chmod 0644 /etc/apt/sources.list.d/google-cloud-sdk.list
+    fi
+    run_command "refresh Ubuntu package metadata" sudo apt-get update
+    run_command "install Google Cloud CLI prerequisites" sudo apt-get install -y ca-certificates gnupg curl
+
+    local key_file dearmored_key repository_file
+    key_file=$(mktemp)
+    dearmored_key=$(mktemp)
+    repository_file=$(mktemp)
+    curl --fail --silent --show-error --location \
+      "https://packages.cloud.google.com/apt/doc/apt-key.gpg" \
+      --output "$key_file"
+    gpg --dearmor --yes --output "$dearmored_key" "$key_file"
+    run_command "install readable Google Cloud apt signing key" \
+      sudo install -o root -g root -m 0644 "$dearmored_key" /usr/share/keyrings/cloud.google.gpg
+    printf '%s\n' 'deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main' > "$repository_file"
+    run_command "install readable Google Cloud apt repository definition" \
+      sudo install -o root -g root -m 0644 "$repository_file" /etc/apt/sources.list.d/google-cloud-sdk.list
+    rm -f -- "$key_file" "$dearmored_key" "$repository_file"
+    run_command "refresh package metadata with Google Cloud repository" sudo apt-get update
+    run_command "install Google Cloud CLI" sudo apt-get install -y google-cloud-cli
+    command -v gcloud >/dev/null 2>&1 || {
+      printf 'Google Cloud CLI installation did not produce a usable gcloud command.\n' >&2
+      return 1
+    }
+    gcloud version
+  fi
+
+  stage 2 3 "Owner-controlled Google Cloud authentication"
+  open_url "https://cloud.google.com/sdk/docs/authorizing"
+  if [[ -n "$(gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null)" ]]; then
+    printf '  OK  an active gcloud account is already configured; no account identifier is printed.\n'
+  else
+    confirm_action "GCLOUD-LOGIN" "Start console-based Google Cloud user authentication? You will open the printed URL in your browser and paste its authorization code here. No project or cloud resource will be changed."
+    run_command "authenticate the owner account without a WSL callback" gcloud auth login --no-launch-browser
+  fi
+
+  stage 3 3 "Repeat non-mutating GCP-004 preflight"
+  check_local
+  printf '\nBootstrap complete. Review --plan next; do not use --run until the source tree is reviewed and clean.\n'
 }
 
 check_local() {
@@ -50,9 +124,9 @@ check_local() {
   for path in "$SERVICE_TEMPLATE" "$REWRITE_TEMPLATE" "$VALIDATOR" "$RENDERER"; do
     [[ -f "$path" ]] && printf '  OK  %s\n' "${path#"${NEBULA_WIZARD_REPO_ROOT}/"}" || { printf '  ERR missing %s\n' "$path" >&2; failed=1; }
   done
-  git --git-dir="${NEBULA_WIZARD_REPO_ROOT}/.git-local" --work-tree="$NEBULA_WIZARD_REPO_ROOT" diff --quiet \
-    && printf '  OK  tracked worktree is clean\n' \
-    || printf '  WARN tracked worktree is dirty; --run will refuse until changes are reviewed and committed\n'
+  repository_is_clean \
+    && printf '  OK  worktree is clean\n' \
+    || printf '  WARN worktree is dirty or unavailable; --run will refuse until changes are reviewed and committed\n'
   python3 "$VALIDATOR" --template --service "$SERVICE_TEMPLATE" --rewrite "$REWRITE_TEMPLATE" || failed=1
   (( failed == 0 ))
 }
@@ -73,11 +147,11 @@ run_wizard() {
   stage 1 13 "Local prerequisite, repository-integrity, and source/digest checks"
   open_url "https://cloud.google.com/run/docs/deploying-source-code"
   check_local
-  git --git-dir="${NEBULA_WIZARD_REPO_ROOT}/.git-local" --work-tree="$NEBULA_WIZARD_REPO_ROOT" diff --quiet || {
-    printf 'Refusing deployment from a dirty tracked worktree.\n' >&2; return 1;
+  repository_is_clean || {
+    printf 'Refusing deployment from a dirty or unavailable worktree.\n' >&2; return 1;
   }
   local source_commit
-  source_commit=$(git --git-dir="${NEBULA_WIZARD_REPO_ROOT}/.git-local" --work-tree="$NEBULA_WIZARD_REPO_ROOT" rev-parse HEAD)
+  source_commit=$(git -C "$NEBULA_WIZARD_REPO_ROOT" rev-parse HEAD)
   reject_placeholder SOURCE_COMMIT "$source_commit"
   confirm_action "SOURCE-REVIEWED" "Confirm this clean commit is the reviewed deployment source."
   save_value SOURCE_COMMIT "$source_commit"
@@ -251,6 +325,7 @@ main() {
   case "${1:-}" in
     --check) [[ $# -eq 1 ]] || return 2; check_local ;;
     --plan) [[ $# -eq 1 ]] || return 2; show_plan ;;
+    --bootstrap) [[ $# -eq 1 ]] || return 2; bootstrap_prerequisites ;;
     --run) [[ $# -eq 1 ]] || return 2; run_wizard ;;
     --help|-h) show_help ;;
     *) show_help >&2; return 2 ;;
