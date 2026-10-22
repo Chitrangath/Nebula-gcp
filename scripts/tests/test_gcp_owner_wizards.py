@@ -9,6 +9,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from eth_account import Account
+
+from scripts.gcp004_storage_exchange_probe import validate_roles
+
 ROOT = Path(__file__).resolve().parents[2]
 FOUNDATION = ROOT / "scripts/gcp004_foundation_deploy_wizard.sh"
 CUTOVER = ROOT / "scripts/gcp005_vercel_browser_cutover_wizard.sh"
@@ -16,6 +20,7 @@ LAPTOP = ROOT / "scripts/gcp006_laptop_demo_runtime_wizard.sh"
 LIBRARY = ROOT / "scripts/lib/nebula_owner_wizard.sh"
 RENDERER = ROOT / "scripts/render_gcp_demo_config.py"
 DB_PROBE_RENDERER = ROOT / "scripts/render_gcp_db_unavailable_probe.py"
+STORAGE_EXCHANGE_PROBE = ROOT / "scripts/gcp004_storage_exchange_probe.py"
 VALIDATOR = ROOT / "scripts/validate_gcp_demo_config.py"
 WIZARDS = (FOUNDATION, CUTOVER, LAPTOP)
 
@@ -160,6 +165,79 @@ class FoundationWizardContractTest(unittest.TestCase):
         self.assertIn("expected 503", text)
         self.assertIn("gcloud run services delete", text)
 
+    def test_foundation_executes_storage_exchange_instead_of_accepting_pasted_hashes(
+        self,
+    ) -> None:
+        text = FOUNDATION.read_text(encoding="utf-8")
+
+        self.assertIn("gcp004_storage_exchange_probe.py", text)
+        self.assertIn("RUN-STORAGE-EXCHANGE", text)
+        self.assertIn(
+            "net003_sepolia_smoke.py",
+            STORAGE_EXCHANGE_PROBE.read_text(encoding="utf-8"),
+        )
+        self.assertNotIn("ask_public input_hash", text)
+        self.assertNotIn("ask_public result_hash", text)
+        self.assertIn('"input_sha256"', text)
+        self.assertIn('"result_sha256"', text)
+
+    def test_storage_exchange_probe_fails_closed_without_protected_configuration(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(
+                [
+                    str(ROOT / "backend/.venv/bin/python"),
+                    str(STORAGE_EXCHANGE_PROBE),
+                    "--config-dir",
+                    directory,
+                    "--output",
+                    str(Path(directory) / "evidence.json"),
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing protected configuration value", result.stderr)
+
+    def test_storage_exchange_probe_enforces_cleanup_and_role_isolation(self) -> None:
+        probe_text = STORAGE_EXCHANGE_PROBE.read_text(encoding="utf-8")
+        smoke_text = (ROOT / "scripts/net003_sepolia_smoke.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("for address in (ai_user, provider, worker, executor)", probe_text)
+        self.assertIn("process.terminate()", probe_text)
+        self.assertIn("signal.signal(signal.SIGTERM, handle_termination)", smoke_text)
+        self.assertIn("process_base_environment()", smoke_text)
+        self.assertIn("LOG_DIR.chmod(0o700)", smoke_text)
+        self.assertIn("log_path.chmod(0o600)", smoke_text)
+        self.assertIn("storage.get_object(job.input_file_key)", smoke_text)
+
+    def test_storage_exchange_probe_rejects_colliding_roles(self) -> None:
+        keys = {
+            name: f"0x{number:064x}"
+            for number, name in enumerate(
+                (
+                    "GCP004_AI_USER_PRIVATE_KEY",
+                    "GCP004_PROVIDER_PRIVATE_KEY",
+                    "GCP004_WORKER_PRIVATE_KEY",
+                    "GCP004_EXECUTOR_PRIVATE_KEY",
+                ),
+                start=1,
+            )
+        }
+        keys["CONTRACT_VERIFIER_ADDRESS"] = Account.from_key(
+            keys["GCP004_EXECUTOR_PRIVATE_KEY"]
+        ).address
+        keys["GCP004_WORKER_PRIVATE_KEY"] = keys["GCP004_PROVIDER_PRIVATE_KEY"]
+
+        with self.assertRaisesRegex(ValueError, "identities must be distinct"):
+            validate_roles(keys)
+
 
 class CutoverWizardContractTest(unittest.TestCase):
     def test_cutover_plan_preserves_same_origin_browser_auth(self) -> None:
@@ -233,20 +311,46 @@ class RenderedConfigurationContractTest(unittest.TestCase):
         source = {
             "apiVersion": "serving.knative.dev/v1",
             "kind": "Service",
-            "metadata": {"name": "nebula-api", "annotations": {"run.googleapis.com/ingress": "all"}},
+            "metadata": {
+                "name": "nebula-api",
+                "annotations": {"run.googleapis.com/ingress": "all"},
+            },
             "spec": {
                 "template": {
-                    "metadata": {"annotations": {"autoscaling.knative.dev/minScale": "0", "autoscaling.knative.dev/maxScale": "2"}},
+                    "metadata": {
+                        "annotations": {
+                            "autoscaling.knative.dev/minScale": "0",
+                            "autoscaling.knative.dev/maxScale": "2",
+                        }
+                    },
                     "spec": {
-                        "containers": [{
-                            "name": "api",
-                            "image": "us-central1-docker.pkg.dev/project/nebula/api@sha256:" + "a" * 64,
-                            "env": [
-                                {"name": "DATABASE_URL", "valueFrom": {"secretKeyRef": {"name": "database", "key": "1"}}},
-                                {"name": "JWT_SECRET", "valueFrom": {"secretKeyRef": {"name": "jwt", "key": "1"}}},
-                            ],
-                            "startupProbe": {"httpGet": {"path": "/ready", "port": 8080}},
-                        }]
+                        "containers": [
+                            {
+                                "name": "api",
+                                "image": "us-central1-docker.pkg.dev/project/nebula/api@sha256:"
+                                + "a" * 64,
+                                "env": [
+                                    {
+                                        "name": "DATABASE_URL",
+                                        "valueFrom": {
+                                            "secretKeyRef": {
+                                                "name": "database",
+                                                "key": "1",
+                                            }
+                                        },
+                                    },
+                                    {
+                                        "name": "JWT_SECRET",
+                                        "valueFrom": {
+                                            "secretKeyRef": {"name": "jwt", "key": "1"}
+                                        },
+                                    },
+                                ],
+                                "startupProbe": {
+                                    "httpGet": {"path": "/ready", "port": 8080}
+                                },
+                            }
+                        ]
                     },
                 },
                 "traffic": [{"latestRevision": True, "percent": 100}],
@@ -277,16 +381,24 @@ class RenderedConfigurationContractTest(unittest.TestCase):
             probe = json.loads(output_path.read_text(encoding="utf-8"))
             self.assertEqual(probe["metadata"]["name"], "nebula-api-db-probe")
             container = probe["spec"]["template"]["spec"]["containers"][0]
-            self.assertEqual(container["image"], source["spec"]["template"]["spec"]["containers"][0]["image"])
+            self.assertEqual(
+                container["image"],
+                source["spec"]["template"]["spec"]["containers"][0]["image"],
+            )
             self.assertEqual(container["startupProbe"]["httpGet"]["path"], "/live")
             environment = {item["name"]: item for item in container["env"]}
             self.assertEqual(
                 environment["DATABASE_URL"],
-                {"name": "DATABASE_URL", "value": "postgresql+asyncpg://probe:probe@127.0.0.1:1/unavailable"},
+                {
+                    "name": "DATABASE_URL",
+                    "value": "postgresql+asyncpg://probe:probe@127.0.0.1:1/unavailable",
+                },
             )
             self.assertIn("valueFrom", environment["JWT_SECRET"])
             self.assertEqual(
-                probe["spec"]["template"]["metadata"]["annotations"]["autoscaling.knative.dev/maxScale"],
+                probe["spec"]["template"]["metadata"]["annotations"][
+                    "autoscaling.knative.dev/maxScale"
+                ],
                 "1",
             )
 

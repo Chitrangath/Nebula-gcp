@@ -12,8 +12,10 @@ readonly REWRITE_TEMPLATE="${NEBULA_WIZARD_REPO_ROOT}/deploy/gcp-demo/vercel-rew
 readonly VALIDATOR="${NEBULA_WIZARD_REPO_ROOT}/scripts/validate_gcp_demo_config.py"
 readonly RENDERER="${NEBULA_WIZARD_REPO_ROOT}/scripts/render_gcp_demo_config.py"
 readonly DB_PROBE_RENDERER="${NEBULA_WIZARD_REPO_ROOT}/scripts/render_gcp_db_unavailable_probe.py"
+readonly STORAGE_EXCHANGE_PROBE="${NEBULA_WIZARD_REPO_ROOT}/scripts/gcp004_storage_exchange_probe.py"
 readonly MATERIALIZED_SERVICE="${NEBULA_GCP_STATE_DIR}/cloud-run-service.owner.json"
 readonly MATERIALIZED_DB_PROBE="${NEBULA_GCP_STATE_DIR}/cloud-run-db-unavailable-probe.owner.json"
+readonly STORAGE_EXCHANGE_EVIDENCE="${NEBULA_GCP_STATE_DIR}/gcp004-storage-exchange.json"
 
 repository_is_clean() {
   git -C "$NEBULA_WIZARD_REPO_ROOT" rev-parse --verify HEAD >/dev/null 2>&1 \
@@ -123,7 +125,7 @@ check_local() {
       && printf '  OK  %s is available\n' "$optional" \
       || printf '  WARN %s is required when the owner later executes --run\n' "$optional"
   done
-  for path in "$SERVICE_TEMPLATE" "$REWRITE_TEMPLATE" "$VALIDATOR" "$RENDERER" "$DB_PROBE_RENDERER"; do
+  for path in "$SERVICE_TEMPLATE" "$REWRITE_TEMPLATE" "$VALIDATOR" "$RENDERER" "$DB_PROBE_RENDERER" "$STORAGE_EXCHANGE_PROBE"; do
     [[ -f "$path" ]] && printf '  OK  %s\n' "${path#"${NEBULA_WIZARD_REPO_ROOT}/"}" || { printf '  ERR missing %s\n' "$path" >&2; failed=1; }
   done
   repository_is_clean \
@@ -327,14 +329,25 @@ run_wizard() {
   stage 12 13 "Cloud Run and laptop private-object exchange acceptance"
   open_url "https://developers.cloudflare.com/r2/api/s3/"
   printf '%s\n' \
-    'Follow the GCP-004 runbook using one non-production fixture job through the existing authenticated worker interface.' \
-    'Prove Cloud Run stored the accepted input/model, the laptop Worker retrieved them, the result upload reached Cloud Run storage, and the authorized result download hash matches.' \
-    'Record hashes only; never record bytes, credentials, cookies, tokens, or capability URLs.'
-  local input_hash result_hash
-  ask_public input_hash "Sanitized accepted-input SHA-256 evidence"
-  ask_public result_hash "Sanitized result SHA-256 evidence"
-  [[ "$input_hash" =~ ^[0-9a-f]{64}$ && "$result_hash" =~ ^[0-9a-f]{64}$ ]] || { printf 'Refusing invalid storage acceptance hashes.\n' >&2; return 1; }
-  confirm_action "STORAGE-EXCHANGE-ACCEPTED" "Confirm the existing private authenticated flow passed in both directions with no public object access."
+    'The wizard will run two bounded non-production fixture jobs through Cloud Run, temporary laptop runners, the laptop Worker, private R2, and Arbitrum Sepolia.' \
+    'All child processes are terminated by the probe. Only sanitized hashes and public transaction identifiers are retained.' \
+    'The AI-user wallet needs test ETH and test USDC; the GPU provider and Verifier wallets need test ETH.'
+  local ai_user_private_key provider_private_key worker_private_key executor_private_key input_hash result_hash
+  ask_secret ai_user_private_key "Funded non-production AI-user private key"
+  ask_secret provider_private_key "Non-production GPU provider private key"
+  ask_secret worker_private_key "Non-production Worker signer private key"
+  ask_secret executor_private_key "Existing Verifier/executor private key"
+  save_value GCP004_AI_USER_PRIVATE_KEY "$ai_user_private_key"
+  save_value GCP004_PROVIDER_PRIVATE_KEY "$provider_private_key"
+  save_value GCP004_WORKER_PRIVATE_KEY "$worker_private_key"
+  save_value GCP004_EXECUTOR_PRIVATE_KEY "$executor_private_key"
+  confirm_action "RUN-STORAGE-EXCHANGE" "Run the bounded live fixture now? This sends Arbitrum Sepolia transactions and may consume testnet funds and billable cloud requests."
+  run_command "execute Cloud Run and laptop private-storage journey" \
+    "${NEBULA_WIZARD_REPO_ROOT}/backend/.venv/bin/python" "$STORAGE_EXCHANGE_PROBE" \
+    --config-dir "$NEBULA_GCP_CONFIG_DIR" --output "$STORAGE_EXCHANGE_EVIDENCE"
+  input_hash=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["journeys"][0]["input_sha256"])' "$STORAGE_EXCHANGE_EVIDENCE")
+  result_hash=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["journeys"][0]["result_sha256"])' "$STORAGE_EXCHANGE_EVIDENCE")
+  [[ "$input_hash" =~ ^[0-9a-f]{64}$ && "$result_hash" =~ ^[0-9a-f]{64}$ ]] || { printf 'Refusing invalid automated storage acceptance hashes.\n' >&2; return 1; }
   record_public_evidence GCP004_DIRECT_ACCEPTANCE.env "STATUS=accepted
 SOURCE_COMMIT=${source_commit}
 CLOUD_RUN_ORIGIN=${cloud_run_origin}

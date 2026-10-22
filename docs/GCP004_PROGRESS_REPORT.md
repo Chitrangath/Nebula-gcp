@@ -17,14 +17,18 @@ R2, Vercel, or DNS mutation has been performed by this report
   `/live = 200` and `/ready = 503`, and is deleted before the gate passes.
 - Preserved the production API configuration and Supabase database throughout
   the failure test.
+- Replaced the manual storage-hash attestation with an executable bounded
+  Cloud Run, private-R2, laptop-runner, fixture-Worker, and Arbitrum Sepolia
+  journey. The probe validates distinct identities, stops its child processes,
+  and emits sanitized hashes derived from actual authorized downloads.
 
 GCP-004 is not complete. The real cloud deployment and direct private-storage
-exchange remain owner-controlled, and the storage acceptance gate must be made
-executable before `--run` is approved.
+exchange remain owner-controlled. The storage acceptance gate is now
+executable, but cannot be marked accepted until the owner runs it successfully.
 
 ## Verification
 
-- Combined setup, owner-wizard, and GCP adapter suite: **49 passed**.
+- Combined setup, owner-wizard, and GCP adapter suite: **53 passed**.
 - Python compilation passed for both renderers and the shared validator.
 - Bash syntax passed for the E2E and GCP-004 wizards.
 - `git diff --check` passed.

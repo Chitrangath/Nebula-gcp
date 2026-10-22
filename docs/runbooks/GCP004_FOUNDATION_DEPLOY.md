@@ -44,10 +44,23 @@ URL, and must return `/live = 200` and `/ready = 503`. The owner separately
 confirms its creation, temporary public invocation, and deletion. The probe
 does not alter the production service or Supabase configuration.
 
-Direct storage acceptance uses only the existing authenticated worker
-interface. It records accepted-input and result SHA-256 values, never object
-bytes, credentials, cookies, access tokens, or presigned capability URLs. This
-does not establish production readiness or real GPU proof.
+Direct storage acceptance executes two bounded non-production fixture jobs
+through the existing public user and authenticated Worker interfaces. The
+wizard captures separate AI-user, GPU-provider, Worker-signer, and deployed
+Verifier keys as protected mode-0600 configuration values, validates the role
+separation, provisions the fixture model in private R2, and runs the five
+laptop coordinators plus the fixture Worker only for the duration of the
+probe. The probe always terminates its child processes. The AI-user wallet
+must hold test ETH and test USDC; the provider and Verifier wallets require
+test ETH.
+
+The probe verifies Cloud Run input upload, laptop retrieval of the input and
+model through Cloud Run, result upload into private R2, authorized result
+download through Cloud Run, proof settlement, and database/chain
+reconciliation. It records accepted-input and downloaded-result SHA-256
+values plus public testnet identifiers, never object bytes, credentials,
+cookies, access tokens, or presigned capability URLs. This does not establish
+production readiness or real GPU proof.
 
 The wizard stops after writing `GCP004_DIRECT_ACCEPTANCE.env`. It contains the
 accepted origin, immutable digest, source commit, API-only/storage posture, and
