@@ -1,69 +1,48 @@
-import { API_BASE_URL } from '../utils/constants'
+import type { components } from './schema'
+import { requestApi } from './client'
+import { enableSessionRefresh, getAccessToken, invalidateSession, setAccessToken } from './session'
+import { connectInjectedWallet, type ConnectedWallet, type Eip1193Provider } from '../wallet/wallet'
 
-export interface AuthChallenge {
-  challenge: string
-  nonce: string
-  expires_at: string
-}
+export type AuthChallenge = components['schemas']['ChallengeResponse']
+type ChallengeRequest = components['schemas']['ChallengeRequest']
+type VerifyRequest = components['schemas']['VerifyRequest']
+type VerifyResponse = components['schemas']['VerifyResponse']
 
-interface TokenResponse {
-  access_token: string
-  expires_in: number
-}
+export { getAccessToken }
 
-let accessToken: string | null = null
-
-async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
-  const headers = new Headers(init.headers)
-  headers.set('Content-Type', 'application/json')
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    credentials: 'same-origin',
-    headers,
-  })
-  if (!response.ok) {
-    throw new Error(`Authentication request failed with status ${response.status}`)
-  }
-  return (await response.json()) as T
-}
-
-export function getAccessToken(): string | null {
-  return accessToken
-}
-
-export async function createChallenge(walletAddress: string): Promise<AuthChallenge> {
-  return requestJson<AuthChallenge>('/auth/challenge', {
-    method: 'POST',
-    body: JSON.stringify({ wallet_address: walletAddress }),
-  })
+export async function createChallenge(walletAddress: string, signal?: AbortSignal): Promise<AuthChallenge> {
+  const body: ChallengeRequest = { wallet_address: walletAddress }
+  return requestApi<AuthChallenge>('/auth/challenge', { method: 'POST', body: JSON.stringify(body), signal }, false)
 }
 
 export async function verifyChallenge(
   walletAddress: string,
   signature: string,
   nonce: string,
+  signal?: AbortSignal,
 ): Promise<void> {
-  const response = await requestJson<TokenResponse>('/auth/verify', {
-    method: 'POST',
-    body: JSON.stringify({ wallet_address: walletAddress, signature, nonce }),
-  })
-  accessToken = response.access_token
+  const body: VerifyRequest = { wallet_address: walletAddress, signature, nonce }
+  const response = await requestApi<VerifyResponse>('/auth/verify', { method: 'POST', body: JSON.stringify(body), signal }, false)
+  setAccessToken(response.access_token)
 }
 
-export async function refreshAccessToken(): Promise<void> {
-  try {
-    const response = await requestJson<TokenResponse>('/auth/refresh', { method: 'POST' })
-    accessToken = response.access_token
-  } catch (error) {
-    accessToken = null
-    throw error
-  }
+export async function authenticateWallet(provider: Eip1193Provider, signal?: AbortSignal): Promise<ConnectedWallet> {
+  const wallet = await connectInjectedWallet(provider)
+  signal?.throwIfAborted()
+  const challenge = await createChallenge(wallet.address, signal)
+  signal?.throwIfAborted()
+  const signature = await provider.request({ method: 'personal_sign', params: [challenge.challenge, wallet.address] })
+  signal?.throwIfAborted()
+  if (typeof signature !== 'string') throw new Error('Wallet returned an invalid signature')
+  await verifyChallenge(wallet.address, signature, challenge.nonce, signal)
+  enableSessionRefresh()
+  return wallet
 }
 
-export async function logout(): Promise<void> {
+export async function logout(signal?: AbortSignal): Promise<void> {
   try {
-    await requestJson<{ detail: string }>('/auth/logout', { method: 'POST' })
+    await requestApi<Record<string, string>>('/auth/logout', { method: 'POST', signal }, false)
   } finally {
-    accessToken = null
+    invalidateSession()
   }
 }

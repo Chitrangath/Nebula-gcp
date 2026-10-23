@@ -118,7 +118,7 @@ Execute these tickets strictly in order:
 1. **`FE-001` — Frontend harness and generated artifacts**  
    **DONE** — see `docs/FE001_COMPLETION_REPORT.md`.
 2. **`FE-002` — Wallet authentication and typed HTTP module**  
-   Implement the same-origin browser-auth client. Depends on FE-001.
+   **DONE** — see `docs/FE002_COMPLETION_REPORT.md`.
 3. **`FE-003` — AI-user upload and escrow journey**  
    Implement authoritative upload, allowance/approval, and job creation. Depends on FE-002 and BE-001.
 4. **`FE-004` — Job lifecycle, reconciliation, and result UX**  
@@ -167,8 +167,8 @@ Do not call the project production-ready until REL-001 records an explicit launc
 
 ## 5. Immediate next action
 
-The next action is **FE-002**, implementing wallet authentication and a typed
-same-origin HTTP module on FE-001's checked artifacts. Hosted infrastructure
+The next action is **FE-003**, implementing the AI-user upload, exact allowance/
+approval, `createJob`, and escrow-confirmation journey. Hosted infrastructure
 mutations remain owner-controlled and require explicit approval.
 
 ## 6. Working rules for every ticket

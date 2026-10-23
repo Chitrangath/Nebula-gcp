@@ -285,7 +285,7 @@ is definitive where the diagram is intentionally simplified.
 
 ### FE-002 — Wallet authentication and typed HTTP module
 
-- State: `READY`
+- State: `DONE`
 - Actor: `AGENT`
 - Depends on: FE-001
 - Outcome: connect an Arbitrum Sepolia wallet, authenticate, and call backend
@@ -298,7 +298,7 @@ is definitive where the diagram is intentionally simplified.
 
 ### FE-003 — AI-user upload and escrow journey
 
-- State: `BLOCKED`
+- State: `READY`
 - Actor: `AGENT`
 - Depends on: FE-002, BE-001
 - Outcome: implement the browser path through upload, allowance, approval,

@@ -1,66 +1,53 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const tokenResponse = (accessToken: string): Response =>
-  new Response(JSON.stringify({ access_token: accessToken, expires_in: 86400 }), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
+import { authenticateWallet, logout } from './auth'
+import { clearAccessToken, enableSessionRefresh, getAccessToken, setAccessToken } from './session'
+
+const address = `0x${'12'.repeat(20)}`
+const chainId = '0x66eee'
+
+describe('wallet authentication', () => {
+  beforeEach(() => {
+    clearAccessToken()
+    enableSessionRefresh()
+    vi.restoreAllMocks()
   })
 
-async function freshAuthModule() {
-  vi.resetModules()
-  return import('./auth')
-}
+  it('signs the exact expiring challenge and keeps the returned token in memory', async () => {
+    const request = vi.fn(async ({ method, params }: { method: string; params?: unknown[] }) => {
+      if (method === 'eth_requestAccounts') return [address]
+      if (method === 'eth_chainId') return chainId
+      if (method === 'personal_sign') {
+        expect(params).toEqual(['Sign this exact challenge', address])
+        return `0x${'ab'.repeat(65)}`
+      }
+      throw new Error('unexpected method')
+    })
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ challenge: 'Sign this exact challenge', nonce: 'nonce-1', expires_at: '2099-01-01T00:00:00Z' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'access', expires_in: 60 }), { status: 200 }))
 
-afterEach(() => {
-  vi.unstubAllGlobals()
-})
-
-describe('browser authentication token ownership', () => {
-  it('keeps the verified access token only in module memory', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(tokenResponse('verified-token'))
-    vi.stubGlobal('fetch', fetchMock)
-    const auth = await freshAuthModule()
-
-    await auth.verifyChallenge('0x' + '11'.repeat(20), '0xsigned', 'nonce')
-
-    expect(auth.getAccessToken()).toBe('verified-token')
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/v1/auth/verify',
-      expect.objectContaining({ method: 'POST', credentials: 'same-origin' }),
-    )
+    await expect(authenticateWallet({ request })).resolves.toMatchObject({ address: address.toLowerCase() })
+    expect(getAccessToken()).toBe('access')
   })
 
-  it('replaces the access token after refresh', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(tokenResponse('first-token'))
-      .mockResolvedValueOnce(tokenResponse('rotated-token'))
-    vi.stubGlobal('fetch', fetchMock)
-    const auth = await freshAuthModule()
+  it('aborts challenge fetch when its caller cancels', async () => {
+    const controller = new AbortController()
+    const request = vi.fn().mockResolvedValueOnce([address]).mockResolvedValueOnce(chainId)
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      expect(init?.signal).toBe(controller.signal)
+      throw new DOMException('Aborted', 'AbortError')
+    })
+    controller.abort()
 
-    await auth.verifyChallenge('0x' + '11'.repeat(20), '0xsigned', 'nonce')
-    await auth.refreshAccessToken()
-
-    expect(auth.getAccessToken()).toBe('rotated-token')
-    expect(fetchMock).toHaveBeenLastCalledWith(
-      '/api/v1/auth/refresh',
-      expect.objectContaining({ method: 'POST', credentials: 'same-origin' }),
-    )
+    await expect(authenticateWallet({ request }, controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
   })
 
-  it('clears memory after failed refresh and logout', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(tokenResponse('first-token'))
-      .mockResolvedValueOnce(new Response(null, { status: 401 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ detail: 'Logged out' }), { status: 200 }))
-    vi.stubGlobal('fetch', fetchMock)
-    const auth = await freshAuthModule()
+  it('clears the token even when remote logout is unavailable', async () => {
+    setAccessToken('access')
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network detail'))
 
-    await auth.verifyChallenge('0x' + '11'.repeat(20), '0xsigned', 'nonce')
-    await expect(auth.refreshAccessToken()).rejects.toThrow('status 401')
-    expect(auth.getAccessToken()).toBeNull()
-    await auth.logout()
-    expect(auth.getAccessToken()).toBeNull()
+    await expect(logout()).rejects.toThrow('temporarily unavailable')
+    expect(getAccessToken()).toBeNull()
   })
 })
