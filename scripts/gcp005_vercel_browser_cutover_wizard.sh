@@ -102,7 +102,7 @@ run_wizard() {
   stage 5 7 "Deploy/redeploy the Vercel frontend only after rewrite validation"
   local staging_dir
   staging_dir=$(mktemp -d)
-  git --git-dir="${NEBULA_WIZARD_REPO_ROOT}/.git-local" --work-tree="$NEBULA_WIZARD_REPO_ROOT" archive --format=tar HEAD frontend > "${staging_dir}/frontend.tar"
+  git -C "${NEBULA_WIZARD_REPO_ROOT}" archive --format=tar HEAD frontend > "${staging_dir}/frontend.tar"
   tar -xf "${staging_dir}/frontend.tar" -C "$staging_dir" --strip-components=1
   rm -f -- "${staging_dir}/frontend.tar"
   cp "$MATERIALIZED_REWRITE" "$staging_dir/vercel.json"

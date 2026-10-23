@@ -379,6 +379,12 @@ class CutoverWizardContractTest(unittest.TestCase):
         self.assertNotIn("localStorage", text)
         self.assertNotIn("sessionStorage", text)
 
+    def test_cutover_archives_frontend_from_active_repository_metadata(self) -> None:
+        text = CUTOVER.read_text(encoding="utf-8")
+
+        self.assertNotIn(".git-local", text)
+        self.assertIn('git -C "${NEBULA_WIZARD_REPO_ROOT}" archive', text)
+
 
 class LaptopWizardContractTest(unittest.TestCase):
     def test_laptop_plan_orders_validation_prepare_start_and_stop(self) -> None:
