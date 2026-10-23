@@ -116,7 +116,7 @@ Acceptance gate:
 Execute these tickets strictly in order:
 
 1. **`FE-001` — Frontend harness and generated artifacts**  
-   Establish the frontend tests and generate contract ABI/OpenAPI clients. Depends on BE-003 and NET-002.
+   **DONE** — see `docs/FE001_COMPLETION_REPORT.md`.
 2. **`FE-002` — Wallet authentication and typed HTTP module**  
    Implement the same-origin browser-auth client. Depends on FE-001.
 3. **`FE-003` — AI-user upload and escrow journey**  
@@ -167,9 +167,9 @@ Do not call the project production-ready until REL-001 records an explicit launc
 
 ## 5. Immediate next action
 
-The next action is **FE-001**, building on BE-003's checked FastAPI OpenAPI
-document and generated browser types. Hosted infrastructure mutations remain
-owner-controlled and require explicit approval.
+The next action is **FE-002**, implementing wallet authentication and a typed
+same-origin HTTP module on FE-001's checked artifacts. Hosted infrastructure
+mutations remain owner-controlled and require explicit approval.
 
 ## 6. Working rules for every ticket
 

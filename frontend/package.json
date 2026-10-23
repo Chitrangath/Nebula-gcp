@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "prebuild": "npm run check:api",
+    "prebuild": "npm run check:api && npm run check:contracts",
     "build": "tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "vitest run",
     "generate:api": "../backend/.venv/bin/python ../scripts/generate_openapi_contract.py",
     "check:api": "node scripts/check-api-contract.mjs",
+    "generate:contracts": "python3 ../scripts/sync_contract_artifacts.py --frontend-only",
+    "check:contracts": "node scripts/check-contract-artifact.mjs",
     "test:browser-auth": "playwright test tests/browser/auth.spec.ts",
     "preview": "vite preview"
   },
@@ -22,6 +24,9 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.55.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
     "@typescript-eslint/eslint-plugin": "^8.70.1",
@@ -31,6 +36,7 @@
     "eslint": "^8.55.0",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.5",
+    "jsdom": "^27.0.1",
     "openapi-typescript": "^7.10.1",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.4.0",

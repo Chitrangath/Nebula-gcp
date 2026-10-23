@@ -273,7 +273,7 @@ is definitive where the diagram is intentionally simplified.
 
 ### FE-001 — Frontend test harness and generated contract/OpenAPI artifacts
 
-- State: `READY`
+- State: `DONE`
 - Actor: `AGENT`
 - Depends on: BE-003, NET-002
 - Outcome: create reliable frontend verification and eliminate handwritten ABI
@@ -285,7 +285,7 @@ is definitive where the diagram is intentionally simplified.
 
 ### FE-002 — Wallet authentication and typed HTTP module
 
-- State: `BLOCKED`
+- State: `READY`
 - Actor: `AGENT`
 - Depends on: FE-001
 - Outcome: connect an Arbitrum Sepolia wallet, authenticate, and call backend
