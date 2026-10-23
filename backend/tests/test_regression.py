@@ -32,10 +32,10 @@ async def _seed_user_with_token(db: AsyncSession) -> tuple[str, str]:
 
     wallet = "0x" + uuid.uuid4().hex[:40]
     user_id = uuid.uuid4()
-    user = User(id=user_id, wallet_address=wallet, role="user")
+    user = User(id=user_id, wallet_address=wallet, role="provider")
     db.add(user)
 
-    token = create_access_token(str(user_id), wallet, "user")
+    token = create_access_token(str(user_id), wallet, "provider")
     session = AuthSession(
         user_id=user_id,
         token_hash=sha256_hex(token),

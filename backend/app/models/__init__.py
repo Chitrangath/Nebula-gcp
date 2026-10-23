@@ -151,6 +151,7 @@ class Payment(Base):
     payment_type = Column(String(20))
     status = Column(String(50), default="pending")
     blockchain_tx_hash = Column(String(255), unique=True)
+    withdrawal_tx_hash = Column(String(255))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     credited_at = Column(DateTime(timezone=True))
     withdrawn_at = Column(DateTime(timezone=True))
@@ -162,6 +163,7 @@ class Payment(Base):
     __table_args__ = (
         CheckConstraint("payment_type IN ('provider_credit', 'user_refund')", name="ck_payments_type"),
         CheckConstraint("status IN ('pending', 'credited', 'withdrawn')", name="ck_payments_status"),
+        Index("idx_payments_withdrawal_tx", "withdrawal_tx_hash"),
     )
 
 

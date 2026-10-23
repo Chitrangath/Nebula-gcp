@@ -770,6 +770,20 @@ class EventPoller:
         return {"from_block": start, "to_block": end, "events": count, "reorged": reorged}
 
     async def _project(self, db: AsyncSession, event: BlockchainEvent) -> None:
+        if event.event_name == "WithdrawalCompleted":
+            await self._project_withdrawal(db, event)
+            tx = (
+                await db.execute(
+                    select(ChainTransaction).where(
+                        ChainTransaction.tx_hash == event.transaction_hash,
+                        ChainTransaction.chain_instance_id == event.chain_instance_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if tx:
+                tx.status = "finalized" if event.confirmation_status == "finalized" else "confirmed"
+            await db.flush()
+            return
         if event.event_name == "__checkpoint__" or event.job_id is None:
             return
         job = (await db.execute(select(Job).where(Job.id == event.job_id))).scalar_one_or_none()
@@ -856,3 +870,54 @@ class EventPoller:
         if tx:
             tx.status = "finalized" if event.confirmation_status == "finalized" else "confirmed"
         await db.flush()
+
+    async def _project_withdrawal(self, db: AsyncSession, event: BlockchainEvent) -> None:
+        """Apply one full pull-payment withdrawal to projected provider credits."""
+        # Unlike job projections, a withdrawal has no job_id from which a
+        # pre-finality reorg can rebuild state. Defer mutation until finality.
+        if event.confirmation_status != "finalized":
+            return
+        data = event.event_data or {}
+        provider_address = str(data.get("provider", "")).lower()
+        provider_id = (
+            await db.execute(select(User.id).where(User.wallet_address == provider_address))
+        ).scalar_one_or_none()
+        if provider_id is None:
+            return
+
+        already_projected = (
+            await db.execute(
+                select(Payment).where(
+                    Payment.provider_id == provider_id,
+                    Payment.payment_type == "provider_credit",
+                    Payment.status == "withdrawn",
+                    Payment.withdrawal_tx_hash == event.transaction_hash,
+                )
+            )
+        ).scalars().all()
+        expected_amount = int(data["amount"])
+        if sum(int(payment.amount_base_units) for payment in already_projected) == expected_amount:
+            return
+
+        payments = (
+            await db.execute(
+                select(Payment)
+                .where(
+                    Payment.provider_id == provider_id,
+                    Payment.payment_type == "provider_credit",
+                    Payment.status == "credited",
+                )
+                .order_by(Payment.credited_at, Payment.id)
+            )
+        ).scalars().all()
+        projected_amount = sum(int(payment.amount_base_units) for payment in payments)
+        if projected_amount != expected_amount:
+            raise CriticalReconciliationError(
+                "Withdrawal projection does not reconcile with credited provider payments"
+            )
+
+        withdrawn_at = datetime.fromtimestamp(int(data["_blockTimestamp"]), timezone.utc)
+        for payment in payments:
+            payment.status = "withdrawn"
+            payment.withdrawal_tx_hash = event.transaction_hash
+            payment.withdrawn_at = withdrawn_at

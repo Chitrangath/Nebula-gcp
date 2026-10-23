@@ -23,6 +23,7 @@ SELECTOR_ASSIGN_PROVIDER = bytes.fromhex("4e583fbf")  # assignProvider(bytes32,a
 SELECTOR_SUBMIT_PROOF = bytes.fromhex("3521e00d")  # submitProof(bytes32,bytes32,bytes32,bytes32)
 SELECTOR_VERIFY_JOB = bytes.fromhex("d3164c32")  # verifyJob(bytes32,bool)
 SELECTOR_GET_JOB = bytes.fromhex("f729cf0d")  # getJob(bytes32)
+SELECTOR_GET_PENDING_WITHDRAWAL = bytes.fromhex("7ee8b2f8")  # getPendingWithdrawal(address)
 GET_JOB_OUTPUT_TYPES = [
     "address",
     "address",
@@ -64,6 +65,15 @@ def read_contract_job(blockchain: "BlockchainBackend", contract_address: str, jo
         "state",
     ]
     return dict(zip(names, values, strict=True))
+
+
+def read_pending_withdrawal(
+    blockchain: "BlockchainBackend", contract_address: str, beneficiary: str
+) -> int:
+    """Read a beneficiary's current pull-payment balance without signing a transaction."""
+    calldata = SELECTOR_GET_PENDING_WITHDRAWAL + encode(["address"], [beneficiary])
+    (amount,) = decode(["uint256"], blockchain.call_contract(contract_address, calldata))
+    return int(amount)
 
 
 class BlockchainBackend(Protocol):

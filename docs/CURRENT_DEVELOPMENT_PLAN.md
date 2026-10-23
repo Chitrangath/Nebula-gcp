@@ -93,7 +93,7 @@ Acceptance gate:
 ### Step 4 — Complete provider operations and stabilize the API contract
 
 **Ticket:** `BE-003`  
-**Status:** `READY`; BE-002 and NET-003 dependencies are complete
+**Status:** `DONE`; see `docs/BE003_COMPLETION_REPORT.md`
 
 Implement the provider-facing backend contract required by the frontend:
 
@@ -167,10 +167,9 @@ Do not call the project production-ready until REL-001 records an explicit launc
 
 ## 5. Immediate next action
 
-The next action is **BE-003**, implemented test-first against the provider and
-browser-contract acceptance criteria in `docs/POST_PHASE3_SUB_TICKETS.md`.
-Hosted infrastructure mutations remain owner-controlled and require explicit
-approval; BE-003 begins with local backend interfaces and contract tests.
+The next action is **FE-001**, building on BE-003's checked FastAPI OpenAPI
+document and generated browser types. Hosted infrastructure mutations remain
+owner-controlled and require explicit approval.
 
 ## 6. Working rules for every ticket
 

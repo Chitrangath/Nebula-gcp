@@ -1,6 +1,15 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
+
+
+class ProblemResponse(BaseModel):
+    type: str = "about:blank"
+    title: str
+    status: int
+    detail: str | list[dict[str, Any]]
+    instance: str
 
 
 class ChallengeRequest(BaseModel):
@@ -49,6 +58,40 @@ class NodeResponse(BaseModel):
     status: str
     last_heartbeat: datetime | None
     active_leases: int
+    worker_signer_address: str | None
+
+
+class RotateNodeCredentialResponse(BaseModel):
+    node_id: str
+    api_key: str
+
+
+class RotateWorkerSignerRequest(BaseModel):
+    worker_signer_address: str = Field(..., pattern=r"^0x[0-9a-fA-F]{40}$")
+
+
+class RotateWorkerSignerResponse(BaseModel):
+    node_id: str
+    worker_signer_address: str
+
+
+class EarningCreditResponse(BaseModel):
+    job_id: str
+    amount_base_units: str
+    status: str
+    blockchain_tx_hash: str | None
+    withdrawal_tx_hash: str | None
+    credited_at: datetime | None
+    withdrawn_at: datetime | None
+
+
+class EarningsResponse(BaseModel):
+    provider_id: str
+    total_credited_base_units: str
+    total_withdrawn_base_units: str
+    pending_withdrawal_base_units: str | None
+    pending_withdrawal_status: str
+    credits: list[EarningCreditResponse]
 
 
 class HeartbeatRequest(BaseModel):

@@ -1,14 +1,36 @@
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Node, User
-from app.schemas import HeartbeatRequest, NodeResponse, RegisterNodeRequest, RegisterNodeResponse
+from app.schemas import (
+    NodeResponse,
+    RegisterNodeRequest,
+    RegisterNodeResponse,
+    RotateNodeCredentialResponse,
+    RotateWorkerSignerRequest,
+    RotateWorkerSignerResponse,
+)
 from app.security import get_current_user
-from app.services.node_service import register_node, update_heartbeat
+from app.services.node_service import generate_api_key, register_node, rotate_node_credentials
 
 router = APIRouter()
+
+
+def _require_provider(user: User) -> None:
+    if user.role != "provider":
+        raise HTTPException(status_code=403, detail="Provider role required")
+
+
+async def _owned_node(db: AsyncSession, user: User, node_id: uuid.UUID) -> Node:
+    result = await db.execute(select(Node).where(Node.id == node_id, Node.provider_id == user.id))
+    node = result.scalar_one_or_none()
+    if node is None:
+        raise HTTPException(status_code=404, detail="Node not found")
+    return node
 
 
 @router.post("", response_model=RegisterNodeResponse)
@@ -16,7 +38,8 @@ async def create_node(
     req: RegisterNodeRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-):
+) -> RegisterNodeResponse:
+    _require_provider(user)
     node, api_key = await register_node(
         db,
         provider_id=user.id,
@@ -33,8 +56,12 @@ async def create_node(
 
 
 @router.get("", response_model=list[NodeResponse])
-async def list_nodes(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Node).where(Node.status.in_(["online", "pending"])))
+async def list_nodes(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[NodeResponse]:
+    _require_provider(user)
+    result = await db.execute(select(Node).where(Node.provider_id == user.id).order_by(Node.created_at, Node.id))
     nodes = result.scalars().all()
     return [
         NodeResponse(
@@ -44,17 +71,20 @@ async def list_nodes(db: AsyncSession = Depends(get_db)):
             status=n.status or "pending",
             last_heartbeat=n.last_heartbeat,
             active_leases=n.active_leases or 0,
+            worker_signer_address=n.worker_signer_address,
         )
         for n in nodes
     ]
 
 
 @router.get("/{node_id}", response_model=NodeResponse)
-async def get_node(node_id: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Node).where(Node.id == node_id))
-    node = result.scalar_one_or_none()
-    if not node:
-        raise HTTPException(status_code=404, detail="Node not found")
+async def get_node(
+    node_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> NodeResponse:
+    _require_provider(user)
+    node = await _owned_node(db, user, node_id)
     return NodeResponse(
         id=str(node.id),
         gpu_name=node.gpu_name,
@@ -62,17 +92,51 @@ async def get_node(node_id: str, db: AsyncSession = Depends(get_db)):
         status=node.status or "pending",
         last_heartbeat=node.last_heartbeat,
         active_leases=node.active_leases or 0,
+        worker_signer_address=node.worker_signer_address,
     )
 
 
-@router.post("/heartbeat")
-async def node_heartbeat(
-    req: HeartbeatRequest,
+@router.post("/{node_id}/credentials/rotate", response_model=RotateNodeCredentialResponse)
+async def rotate_credentials(
+    node_id: uuid.UUID,
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(select(Node).where(Node.id == req.node_id))
-    node = result.scalar_one_or_none()
-    if not node:
-        raise HTTPException(status_code=404, detail="Node not found")
-    await update_heartbeat(db, node)
-    return {"detail": "Heartbeat recorded"}
+) -> RotateNodeCredentialResponse:
+    """Rotate a provider-owned credential and display the replacement once."""
+    _require_provider(user)
+    node = await _owned_node(db, user, node_id)
+    node, api_key = await rotate_node_credentials(db, node)
+    return RotateNodeCredentialResponse(node_id=str(node.id), api_key=api_key)
+
+
+@router.post("/{node_id}/credentials/revoke", status_code=204)
+async def revoke_credentials(
+    node_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Invalidate a provider-owned credential without returning a replacement."""
+    _require_provider(user)
+    node = await _owned_node(db, user, node_id)
+    _, replacement_hash = generate_api_key()
+    node.api_key_hash = replacement_hash
+    node.status = "disabled"
+    await db.flush()
+
+
+@router.post("/{node_id}/worker-signer/rotate", response_model=RotateWorkerSignerResponse)
+async def rotate_worker_signer(
+    node_id: uuid.UUID,
+    req: RotateWorkerSignerRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RotateWorkerSignerResponse:
+    """Replace the only signer accepted for future proofs from a node."""
+    _require_provider(user)
+    node = await _owned_node(db, user, node_id)
+    node.worker_signer_address = req.worker_signer_address
+    await db.flush()
+    return RotateWorkerSignerResponse(
+        node_id=str(node.id),
+        worker_signer_address=node.worker_signer_address,
+    )

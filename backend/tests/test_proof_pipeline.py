@@ -201,6 +201,58 @@ class TestProofPipeline:
         assert all(c.passed for c in result.checks)
 
     @pytest.mark.asyncio
+    async def test_rotated_worker_signer_rejects_stale_signature(self, db: AsyncSession, active_lease_and_job):
+        job, lease, attempt, node, worker_key, worker_acct, storage, result_bytes = active_lease_and_job
+        await storage.put_object(job.result_file_key, result_bytes)
+        trace_hashes = [hashlib.sha256(f"step{i}".encode()).digest() for i in range(4)]
+        fingerprint_hex = hashlib.sha256(b"fingerprint-data").hexdigest()
+        job.expected_fingerprint = fingerprint_hex
+        output_hash = hashlib.sha256(result_bytes).digest()
+        merkle_root, proofs = build_merkle_tree([*trace_hashes, output_hash])
+        ts = int(datetime.now(timezone.utc).timestamp())
+        envelope = ProofEnvelope(
+            protocol_version=1,
+            chain_id=421614,
+            verifying_contract="0x" + "ab" * 20,
+            job_id=bytes.fromhex(job.chain_job_id.removeprefix("0x")),
+            attempt_id=bytes.fromhex(uuid_to_bytes32(attempt.id)[2:]),
+            lease_id=bytes.fromhex(lease.lease_id[2:]),
+            provider="0x" + "22" * 20,
+            fingerprint=bytes.fromhex(fingerprint_hex),
+            merkle_root=merkle_root,
+            output_hash=output_hash,
+            proof_timestamp=ts,
+            lease_expires_at=int(lease.expires_at.timestamp()),
+        )
+        signature = sign_envelope(envelope, worker_key)
+        node.worker_signer_address = "0x" + "77" * 20
+        await db.flush()
+
+        result = await verify_proof(
+            db,
+            storage=storage,
+            job_id=str(job.id),
+            attempt_id=str(attempt.id),
+            lease_id=str(lease.id),
+            fingerprint_hex=fingerprint_hex,
+            merkle_root_hex=merkle_root.hex(),
+            output_hash_hex=output_hash.hex(),
+            merkle_proof=proofs[0],
+            trace_hashes=trace_hashes,
+            checkpoint_names=["preprocess", "forward", "softmax", "topk"],
+            signature_bytes=signature,
+            signer_address=worker_acct.address,
+            proof_timestamp=ts,
+            protocol_version=1,
+            chain_id=421614,
+            contract_address="0x" + "ab" * 20,
+            model_id="resnet50",
+        )
+
+        assert result.verdict == Verdict.INVALID
+        assert result.error == "Signer/provider binding failed"
+
+    @pytest.mark.asyncio
     async def test_check_1_bad_protocol_version(self, db: AsyncSession, active_lease_and_job):
         job, lease, attempt, node, worker_key, worker_acct, storage, result_bytes = active_lease_and_job
         result = await verify_proof(

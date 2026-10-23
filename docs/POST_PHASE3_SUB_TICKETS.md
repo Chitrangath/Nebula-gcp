@@ -257,7 +257,7 @@ is definitive where the diagram is intentionally simplified.
 
 ### BE-003 — Provider interfaces and stable browser contract
 
-- State: `READY`
+- State: `DONE`
 - Actor: `AGENT`
 - Depends on: BE-002, NET-003
 - Outcome: replace provider placeholders and provide generated, stable browser
@@ -273,7 +273,7 @@ is definitive where the diagram is intentionally simplified.
 
 ### FE-001 — Frontend test harness and generated contract/OpenAPI artifacts
 
-- State: `BLOCKED`
+- State: `READY`
 - Actor: `AGENT`
 - Depends on: BE-003, NET-002
 - Outcome: create reliable frontend verification and eliminate handwritten ABI
