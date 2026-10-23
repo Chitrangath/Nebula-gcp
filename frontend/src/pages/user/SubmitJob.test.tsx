@@ -1,0 +1,64 @@
+import { cleanup, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import type { SupportedModel } from '../../jobs/backend'
+import type { ChainGateway, JobBackend } from '../../jobs/submitJob'
+import SubmitJob from './SubmitJob'
+import { setAuthenticatedWallet } from '../../api/session'
+
+const account = `0x${'56'.repeat(20)}` as const
+const model: SupportedModel = { id: 'resnet50', name: 'ResNet50', input_type: 'image', supported_formats: ['png', 'jpg', 'jpeg'], max_input_size_mb: 25, price_base_units: '50000' }
+
+function dependencies() {
+  const backend: JobBackend = {
+    createJob: vi.fn().mockResolvedValue({ id: '123e4567-e89b-12d3-a456-426614174000', chain_job_id: `0x${'12'.repeat(16)}${'00'.repeat(16)}`, fingerprint: `0x${'34'.repeat(32)}`, price_base_units: '50000' }),
+    confirmEscrow: vi.fn().mockResolvedValue({ status: 'escrow_confirmed' }),
+  }
+  const chain: ChainGateway = {
+    inspectFunding: vi.fn().mockResolvedValue({ account, token: `0x${'78'.repeat(20)}`, spender: `0x${'90'.repeat(20)}`, jobPrice: 50_000n, allowance: 50_000n, usdcBalance: 50_000n, nativeBalance: 1n, requiredNativeBalance: 1n }),
+    approveExact: vi.fn(),
+    createJob: vi.fn().mockResolvedValue(`0x${'ab'.repeat(32)}`),
+    waitForReceipt: vi.fn().mockImplementation(async (hash) => ({ status: 'success', transactionHash: hash })),
+  }
+  return { backend, chain }
+}
+
+describe('SubmitJob', () => {
+  afterEach(cleanup)
+
+  it('shows the signing summary and completes the ResNet escrow journey', async () => {
+    const deps = dependencies()
+    render(<SubmitJob models={[model]} backend={deps.backend} chain={deps.chain} authenticatedWallet={account} />)
+    expect(screen.getByText(/exact USDC approval/i)).toBeInTheDocument()
+    await userEvent.upload(screen.getByLabelText(/^ResNet input/), new File(['image'], 'cat.png', { type: 'image/png' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Review funding' }))
+    expect(screen.getByLabelText('Signing summary')).toHaveTextContent(account)
+    expect(screen.getByLabelText('Signing summary')).toHaveTextContent('50000 base units')
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm upload and sign' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Escrow confirmed')
+    expect(deps.backend.createJob).toHaveBeenCalledOnce()
+    expect(deps.backend.confirmEscrow).toHaveBeenCalledOnce()
+  })
+
+  it('rejects an oversized input before upload or wallet signing', async () => {
+    const deps = dependencies()
+    render(<SubmitJob models={[{ ...model, max_input_size_mb: 0.000001 }]} backend={deps.backend} chain={deps.chain} authenticatedWallet={account} />)
+    await userEvent.upload(screen.getByLabelText(/^ResNet input/), new File(['too large'], 'cat.png', { type: 'image/png' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Review funding' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('too large')
+    expect(deps.backend.createJob).not.toHaveBeenCalled()
+    expect(deps.chain.createJob).not.toHaveBeenCalled()
+  })
+
+  it('reads a wallet authenticated after the page was already rendered', async () => {
+    const deps = dependencies()
+    render(<SubmitJob models={[model]} backend={deps.backend} chain={deps.chain} />)
+    setAuthenticatedWallet(account)
+    await userEvent.upload(screen.getByLabelText(/^ResNet input/), new File(['image'], 'cat.png', { type: 'image/png' }))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Review funding' }))
+
+    expect(await screen.findByLabelText('Signing summary')).toHaveTextContent(account)
+  })
+})

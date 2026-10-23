@@ -26,7 +26,7 @@ export class ApiUnavailableError extends Error {
 
 async function fetchApi(path: string, init: RequestInit): Promise<Response> {
   const headers = new Headers(init.headers)
-  if (init.body !== undefined) headers.set('Content-Type', 'application/json')
+  if (init.body !== undefined && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
   const token = getAccessToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
   try {

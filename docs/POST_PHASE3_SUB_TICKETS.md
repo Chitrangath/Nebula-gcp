@@ -298,7 +298,7 @@ is definitive where the diagram is intentionally simplified.
 
 ### FE-003 — AI-user upload and escrow journey
 
-- State: `READY`
+- State: `DONE`
 - Actor: `AGENT`
 - Depends on: FE-002, BE-001
 - Outcome: implement the browser path through upload, allowance, approval,
@@ -311,7 +311,7 @@ is definitive where the diagram is intentionally simplified.
 
 ### FE-004 — Job lifecycle, reconciliation, and result UX
 
-- State: `BLOCKED`
+- State: `READY`
 - Actor: `AGENT` locally; `JOINT` for Sepolia browser run
 - Depends on: FE-003, NET-003
 - Outcome: show the authoritative job lifecycle and return an authorized result.

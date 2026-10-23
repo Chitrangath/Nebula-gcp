@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { authenticateWallet, logout } from './auth'
-import { clearAccessToken, enableSessionRefresh, getAccessToken, setAccessToken } from './session'
+import { clearAccessToken, enableSessionRefresh, getAccessToken, getAuthenticatedWallet, setAccessToken } from './session'
 
 const address = `0x${'12'.repeat(20)}`
 const chainId = '0x66eee'
@@ -29,6 +29,7 @@ describe('wallet authentication', () => {
 
     await expect(authenticateWallet({ request })).resolves.toMatchObject({ address: address.toLowerCase() })
     expect(getAccessToken()).toBe('access')
+    expect(getAuthenticatedWallet()).toBe(address)
   })
 
   it('aborts challenge fetch when its caller cancels', async () => {

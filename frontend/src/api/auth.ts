@@ -1,6 +1,6 @@
 import type { components } from './schema'
 import { requestApi } from './client'
-import { enableSessionRefresh, getAccessToken, invalidateSession, setAccessToken } from './session'
+import { enableSessionRefresh, getAccessToken, invalidateSession, setAccessToken, setAuthenticatedWallet } from './session'
 import { connectInjectedWallet, type ConnectedWallet, type Eip1193Provider } from '../wallet/wallet'
 
 export type AuthChallenge = components['schemas']['ChallengeResponse']
@@ -35,6 +35,7 @@ export async function authenticateWallet(provider: Eip1193Provider, signal?: Abo
   signal?.throwIfAborted()
   if (typeof signature !== 'string') throw new Error('Wallet returned an invalid signature')
   await verifyChallenge(wallet.address, signature, challenge.nonce, signal)
+  setAuthenticatedWallet(wallet.address)
   enableSessionRefresh()
   return wallet
 }

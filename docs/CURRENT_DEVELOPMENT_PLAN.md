@@ -120,7 +120,7 @@ Execute these tickets strictly in order:
 2. **`FE-002` — Wallet authentication and typed HTTP module**  
    **DONE** — see `docs/FE002_COMPLETION_REPORT.md`.
 3. **`FE-003` — AI-user upload and escrow journey**  
-   Implement authoritative upload, allowance/approval, and job creation. Depends on FE-002 and BE-001.
+   **DONE** — see `docs/FE003_COMPLETION_REPORT.md`.
 4. **`FE-004` — Job lifecycle, reconciliation, and result UX**  
    Implement lifecycle status, reconciliation, and result access. Depends on FE-003 and NET-003.
 
@@ -167,8 +167,8 @@ Do not call the project production-ready until REL-001 records an explicit launc
 
 ## 5. Immediate next action
 
-The next action is **FE-003**, implementing the AI-user upload, exact allowance/
-approval, `createJob`, and escrow-confirmation journey. Hosted infrastructure
+The next action is **FE-004**, implementing lifecycle status, reconciliation,
+and authorized result access on the completed escrow journey. Hosted infrastructure
 mutations remain owner-controlled and require explicit approval.
 
 ## 6. Working rules for every ticket

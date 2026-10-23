@@ -21,6 +21,7 @@ async def list_models(db: AsyncSession = Depends(get_db)):
             "price_base_units": str(m.price_base_units),
             "input_type": m.input_type,
             "supported_formats": m.supported_formats,
+            "max_input_size_mb": m.max_input_size_mb,
         }
         for m in models
     ]
