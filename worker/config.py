@@ -3,13 +3,14 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     NODE_ID: str
     API_KEY: str
-    PRIVATE_KEY: str
+    PRIVATE_KEY: str = Field(validation_alias=AliasChoices("WORKER_SIGNING_PRIVATE_KEY", "PRIVATE_KEY"))
     BACKEND_URL: str = "https://api.nebula.ai"
     CUDA_VISIBLE_DEVICES: str = "0"
     MODEL_CACHE_DIR: str = "/tmp/nebula-models"
