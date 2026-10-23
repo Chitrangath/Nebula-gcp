@@ -1,5 +1,27 @@
 # BE-002 Completion Report
 
+**Final status:** `DONE` (2026-10-23)
+
+## Hosted acceptance closure
+
+GCP-005 completed the previously owner-controlled acceptance boundary. The
+production frontend at `https://nebula-gcp.vercel.app` now preserves the
+same-origin `/api/v1/*` interface and routes it to the accepted Cloud Run API.
+The owner completed the genuine browser checks for wallet challenge and
+verification, module-memory access-token handling, secure refresh-cookie
+attributes and rotation, logout/revocation, and wrong/missing-Origin rejection.
+
+Sanitized acceptance evidence is retained outside Git at
+`~/.local/state/nebula-gcp/evidence/GCP005_BROWSER_CUTOVER.env`. A subsequent
+read-only production check returned `200` for the frontend and the expected
+backend `405` plus `Allow: POST` and `Cache-Control: no-store` for a GET to
+`/api/v1/auth/challenge`, confirming that the Vercel rewrite reaches the
+FastAPI authentication route without caching it. No token, cookie, signature,
+private key, database URL, or presigned object URL is included in this report.
+
+This closure supersedes the historical `PARTIAL` wording below, which records
+the state and constraints at the end of the local implementation phase.
+
 ## Outcome
 
 BE-002 locally establishes one coherent browser authentication topology.
@@ -40,7 +62,7 @@ is also a cookie-mutating browser operation.
 ## Completion boundary
 
 The agent-executable implementation and local verification are complete. The
-ticket as a whole remains `PARTIAL` only because its final acceptance boundary
+ticket remained `PARTIAL` at that time because its final acceptance boundary
 crosses owner-controlled systems: creating/selecting a persistent PostgreSQL
 database, provisioning one approved backend route and hostname, authenticating
 to Vercel, installing the route's secrets, approving the deployments, and

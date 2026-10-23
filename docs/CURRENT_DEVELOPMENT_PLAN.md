@@ -16,7 +16,8 @@ The local E2E environment is operational on Ubuntu/WSL:
 - Contract compilation and deployed-artifact consistency checks pass.
 - The canonical four-journey local E2E workflow passed twice: **8/8 journeys**.
 - `NET-002` and `NET-003` already provide the deployed Arbitrum Sepolia contract and connected-runtime smoke evidence.
-- `BE-002` is implemented and verified locally, but remains open until its public HTTPS, same-origin, real-browser acceptance gate passes.
+- `GCP-004` direct backend acceptance and `GCP-005` Vercel/browser cutover are complete.
+- `BE-002` is `DONE`: its public HTTPS, same-origin, real-browser acceptance gate passed on 2026-10-23.
 
 This plan does not replace the PRD or ticket acceptance criteria. It identifies the next executable ticket sequence and the gates between tickets.
 
@@ -51,7 +52,7 @@ WRK-003 ----------------------------------+-> QA-001 -> QA-002 -> QA-003
 ### Step 1 — Establish the hosted backend foundation
 
 **Ticket:** `GCP-004`  
-**Status:** `READY`, owner-authorized execution required
+**Status:** `DONE`
 
 Deploy the immutable API image and required GCP foundation, configure durable private storage, and complete direct backend health/storage acceptance.
 
@@ -65,7 +66,7 @@ Acceptance gate:
 ### Step 2 — Cut over the browser path
 
 **Ticket:** `GCP-005`  
-**Status:** `BLOCKED` by accepted GCP-004 evidence
+**Status:** `DONE`
 
 Configure the Vercel same-origin `/api/v1/*` route to the deployed backend and perform genuine browser authentication acceptance.
 
@@ -79,7 +80,7 @@ Acceptance gate:
 ### Step 3 — Close browser authentication
 
 **Ticket:** `BE-002`  
-**Status:** `LOCAL DONE`; closure blocked by GCP-005 browser evidence
+**Status:** `DONE`
 
 Review the GCP-005 output against `docs/BE002_COMPLETION_REPORT.md`. Mark BE-002 `DONE` only after the public HTTPS and real-browser gate passes.
 
@@ -92,7 +93,7 @@ Acceptance gate:
 ### Step 4 — Complete provider operations and stabilize the API contract
 
 **Ticket:** `BE-003`  
-**Status:** `BLOCKED` by BE-002 closure; `NET-003` is already complete
+**Status:** `READY`; BE-002 and NET-003 dependencies are complete
 
 Implement the provider-facing backend contract required by the frontend:
 
@@ -166,13 +167,10 @@ Do not call the project production-ready until REL-001 records an explicit launc
 
 ## 5. Immediate next action
 
-The next action is **GCP-004**, beginning with its non-mutating `--check` and
-`--plan` workflow. If the Google Cloud CLI is unavailable, run the interactive
-`--bootstrap` mode before deployment. Cloud mutations, billing changes,
-credential creation, DNS changes, and deployment remain owner-controlled
-operations and require explicit approval at the relevant wizard gate.
-
-If public deployment is intentionally deferred, do not mark BE-002 complete and do not start BE-003 as though its dependency were satisfied. WRK-003 preparation may continue only within its documented dependency and evidence boundaries.
+The next action is **BE-003**, implemented test-first against the provider and
+browser-contract acceptance criteria in `docs/POST_PHASE3_SUB_TICKETS.md`.
+Hosted infrastructure mutations remain owner-controlled and require explicit
+approval; BE-003 begins with local backend interfaces and contract tests.
 
 ## 6. Working rules for every ticket
 

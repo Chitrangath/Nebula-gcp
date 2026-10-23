@@ -244,7 +244,7 @@ is definitive where the diagram is intentionally simplified.
 
 ### BE-002 — Browser auth topology ADR and implementation
 
-- State: `PARTIAL` (production rewrite and frontend verification remain gated)
+- State: `DONE` (GCP-005 production rewrite and genuine browser acceptance passed 2026-10-23)
 - Actor: `AGENT` for local work; `OWNER` approves topology
 - Depends on: BE-001
 - Outcome: resolve the refresh cookie path/topology and enforce a coherent
@@ -257,7 +257,7 @@ is definitive where the diagram is intentionally simplified.
 
 ### BE-003 — Provider interfaces and stable browser contract
 
-- State: `BLOCKED`
+- State: `READY`
 - Actor: `AGENT`
 - Depends on: BE-002, NET-003
 - Outcome: replace provider placeholders and provide generated, stable browser
