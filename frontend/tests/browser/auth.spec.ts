@@ -4,6 +4,7 @@ import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 test('deployed same-origin authentication rotates and clears its secure cookie', async ({ browser, baseURL }) => {
   expect(baseURL).toBeTruthy()
   const origin = new URL(baseURL!).origin
+  const authCookieURL = `${origin}/api/v1/auth`
   expect(baseURL).toBe(origin)
 
   const context = await browser.newContext({
@@ -58,7 +59,7 @@ test('deployed same-origin authentication rotates and clears its secure cookie',
   expect(await page.evaluate(() => localStorage.length)).toBe(0)
   expect(await page.evaluate(() => sessionStorage.length)).toBe(0)
 
-  const verifiedCookies = await context.cookies(origin)
+  const verifiedCookies = await context.cookies(authCookieURL)
   const originalRefresh = verifiedCookies.find((cookie) => cookie.name === 'refresh_token')
   expect(originalRefresh).toMatchObject({
     domain: new URL(origin).hostname,
@@ -75,7 +76,9 @@ test('deployed same-origin authentication rotates and clears its secure cookie',
   expect(refreshStatus).toBe(200)
   expect(await page.evaluate(() => localStorage.length)).toBe(0)
   expect(await page.evaluate(() => sessionStorage.length)).toBe(0)
-  const rotatedRefresh = (await context.cookies(origin)).find((cookie) => cookie.name === 'refresh_token')
+  const rotatedRefresh = (await context.cookies(authCookieURL)).find(
+    (cookie) => cookie.name === 'refresh_token',
+  )
   expect(rotatedRefresh?.value).toBeTruthy()
   expect(rotatedRefresh?.value).not.toBe(originalRefresh?.value)
 
@@ -84,7 +87,9 @@ test('deployed same-origin authentication rotates and clears its secure cookie',
     return response.status
   })
   expect(logoutStatus).toBe(200)
-  expect((await context.cookies(origin)).find((cookie) => cookie.name === 'refresh_token')).toBeUndefined()
+  expect(
+    (await context.cookies(authCookieURL)).find((cookie) => cookie.name === 'refresh_token'),
+  ).toBeUndefined()
 
   const rejectedRefreshStatus = await page.evaluate(async () => {
     const response = await fetch('/api/v1/auth/refresh', { method: 'POST' })

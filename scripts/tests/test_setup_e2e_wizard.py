@@ -100,6 +100,8 @@ class SetupE2EWizardContractTest(unittest.TestCase):
         self.assertIn("torch.cuda.is_available", text)
         self.assertIn("POSTGRES_PASSWORD=nebula_e2e", text)
         self.assertIn('host_ip" == "127.0.0.1', text)
+        self.assertIn('.HostConfig.PortBindings "5432/tcp"', text)
+        self.assertNotIn('.NetworkSettings.Ports "5432/tcp"', text)
         self.assertIn("chromium.launch", text)
 
     def test_readme_links_the_repeatable_setup_path(self) -> None:

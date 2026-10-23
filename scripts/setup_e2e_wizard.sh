@@ -411,8 +411,8 @@ ensure_postgres() {
   if docker ps -a --format '{{.Names}}' | grep -qx "$POSTGRES_CONTAINER"; then
     local image host_ip port env_values
     image="$(docker inspect --format '{{.Config.Image}}' "$POSTGRES_CONTAINER")"
-    host_ip="$(docker inspect --format '{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostIp}}' "$POSTGRES_CONTAINER" 2>/dev/null || true)"
-    port="$(docker inspect --format '{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort}}' "$POSTGRES_CONTAINER" 2>/dev/null || true)"
+    host_ip="$(docker inspect --format '{{(index (index .HostConfig.PortBindings "5432/tcp") 0).HostIp}}' "$POSTGRES_CONTAINER" 2>/dev/null || true)"
+    port="$(docker inspect --format '{{(index (index .HostConfig.PortBindings "5432/tcp") 0).HostPort}}' "$POSTGRES_CONTAINER" 2>/dev/null || true)"
     env_values="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$POSTGRES_CONTAINER")"
     [[ "$image" == "postgres:16-alpine" && "$host_ip" == "127.0.0.1" && "$port" == "$POSTGRES_PORT" ]] || {
       warn "Existing $POSTGRES_CONTAINER does not match postgres:16-alpine on 127.0.0.1:$POSTGRES_PORT."
