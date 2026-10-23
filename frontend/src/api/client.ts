@@ -75,7 +75,7 @@ function sharedRefresh(): Promise<void> {
   return refreshInFlight
 }
 
-export async function requestApi<T>(path: string, init: RequestInit, allowRefresh = true): Promise<T> {
+export async function requestApiResponse(path: string, init: RequestInit, allowRefresh = true): Promise<Response> {
   let response = await fetchApi(path, init)
   if (response.status === 401 && allowRefresh && canRefreshSession() && !path.startsWith('/auth/')) {
     await sharedRefresh()
@@ -83,6 +83,11 @@ export async function requestApi<T>(path: string, init: RequestInit, allowRefres
     response = await fetchApi(path, init)
   }
   if (!response.ok) throw await problemFrom(response)
+  return response
+}
+
+export async function requestApi<T>(path: string, init: RequestInit, allowRefresh = true): Promise<T> {
+  const response = await requestApiResponse(path, init, allowRefresh)
   if (response.status === 204) return undefined as T
   return (await response.json()) as T
 }

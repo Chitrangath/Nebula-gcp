@@ -1,6 +1,7 @@
 import type { components } from '../api/schema'
-import { requestApi } from '../api/client'
+import { requestApi, requestApiResponse } from '../api/client'
 import type { BackendJob, Hex, JobBackend, JobSubmissionRequest } from './submitJob'
+import type { Job } from './lifecycle'
 
 type JobResponse = components['schemas']['JobResponse']
 type ConfirmEscrowResponse = components['schemas']['ConfirmEscrowResponse']
@@ -37,6 +38,20 @@ function parseModel(value: unknown): SupportedModel {
 export async function listSupportedModels(signal?: AbortSignal): Promise<SupportedModel[]> {
   const response = await requestApi<unknown[]>('/models', { method: 'GET', signal })
   return response.map(parseModel)
+}
+
+export async function listJobs(signal?: AbortSignal): Promise<Job[]> {
+  const response = await requestApi<{ jobs: Job[] }>('/jobs', { method: 'GET', signal })
+  return response.jobs
+}
+
+export async function getJob(jobId: string, signal?: AbortSignal): Promise<Job> {
+  return requestApi<Job>(`/jobs/${encodeURIComponent(jobId)}`, { method: 'GET', signal })
+}
+
+export async function downloadJobResult(jobId: string, signal?: AbortSignal): Promise<Blob> {
+  const response = await requestApiResponse(`/jobs/${encodeURIComponent(jobId)}/result`, { method: 'GET', signal })
+  return response.blob()
 }
 
 function toBackendJob(job: JobResponse): BackendJob {

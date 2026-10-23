@@ -66,7 +66,7 @@ is definitive where the diagram is intentionally simplified.
 
 ### DPL-001 — Deployment configuration contract and threat model
 
-- State: `DONE`
+- State: `PARTIAL` (agent-local implementation complete; browser/Anvil and owner-authorized Sepolia acceptance remain)
 - Actor: `AGENT`
 - Depends on: none
 - Outcome: define one validated deployment configuration interface for local
@@ -311,7 +311,7 @@ is definitive where the diagram is intentionally simplified.
 
 ### FE-004 — Job lifecycle, reconciliation, and result UX
 
-- State: `READY`
+- State: `DONE`
 - Actor: `AGENT` locally; `JOINT` for Sepolia browser run
 - Depends on: FE-003, NET-003
 - Outcome: show the authoritative job lifecycle and return an authorized result.

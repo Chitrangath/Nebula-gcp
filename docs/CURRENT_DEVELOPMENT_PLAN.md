@@ -122,7 +122,7 @@ Execute these tickets strictly in order:
 3. **`FE-003` — AI-user upload and escrow journey**  
    **DONE** — see `docs/FE003_COMPLETION_REPORT.md`.
 4. **`FE-004` — Job lifecycle, reconciliation, and result UX**  
-   Implement lifecycle status, reconciliation, and result access. Depends on FE-003 and NET-003.
+   **PARTIAL** — local implementation complete; browser/Anvil and Sepolia acceptance remain. See `docs/FE004_COMPLETION_REPORT.md`.
 
 Acceptance gate:
 
@@ -167,9 +167,9 @@ Do not call the project production-ready until REL-001 records an explicit launc
 
 ## 5. Immediate next action
 
-The next action is **FE-004**, implementing lifecycle status, reconciliation,
-and authorized result access on the completed escrow journey. Hosted infrastructure
-mutations remain owner-controlled and require explicit approval.
+The next action is the FE-004 browser/Anvil acceptance gate, followed by the
+owner-authorized Sepolia browser journey. Hosted infrastructure mutations remain
+owner-controlled and require explicit approval.
 
 ## 6. Working rules for every ticket
 
