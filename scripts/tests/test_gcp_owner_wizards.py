@@ -8,10 +8,15 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from eth_account import Account
 
-from scripts.gcp004_storage_exchange_probe import validate_roles
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+os.environ.setdefault("JWT_SECRET", "owner-wizard-test-secret")
+
+from scripts.gcp004_storage_exchange_probe import run_smoke, validate_roles
+from scripts.net003_sepolia_smoke import authenticate
 
 ROOT = Path(__file__).resolve().parents[2]
 FOUNDATION = ROOT / "scripts/gcp004_foundation_deploy_wizard.sh"
@@ -63,6 +68,49 @@ class SharedWizardContractTest(unittest.TestCase):
             result = run_wizard(wizard, "--run")
             self.assertEqual(result.returncode, 2)
             self.assertIn("interactive terminal", result.stderr)
+
+    def test_shared_library_canonicalizes_https_origins(self) -> None:
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'source "{LIBRARY}"; canonicalize_https_origin FRONTEND_URL "https://nebula-gcp.vercel.app/"',
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "https://nebula-gcp.vercel.app")
+
+        default_port = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'source "{LIBRARY}"; canonicalize_https_origin FRONTEND_URL "https://NEBULA-GCP.VERCEL.APP:443/"',
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(default_port.returncode, 0, default_port.stderr)
+        self.assertEqual(default_port.stdout, "https://nebula-gcp.vercel.app")
+
+        malformed = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'source "{LIBRARY}"; canonicalize_https_origin FRONTEND_URL "https://bad..example/"',
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(malformed.returncode, 0)
 
 
 class FoundationWizardContractTest(unittest.TestCase):
@@ -209,7 +257,9 @@ class FoundationWizardContractTest(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("for address in (ai_user, provider, worker, executor)", probe_text)
+        self.assertIn(
+            "for address in (ai_user, provider, worker, executor)", probe_text
+        )
         self.assertIn("process.terminate()", probe_text)
         self.assertIn("signal.signal(signal.SIGTERM, handle_termination)", smoke_text)
         self.assertIn("process_base_environment()", smoke_text)
@@ -237,6 +287,60 @@ class FoundationWizardContractTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "identities must be distinct"):
             validate_roles(keys)
+
+    def test_storage_exchange_probe_retains_child_stderr_in_protected_log(
+        self,
+    ) -> None:
+        process = MagicMock()
+        process.communicate.return_value = ("", "specific child failure\n")
+        process.returncode = 1
+
+        with tempfile.TemporaryDirectory() as directory:
+            error_log = Path(directory) / "probe.stderr.log"
+            with (
+                patch(
+                    "scripts.gcp004_storage_exchange_probe.subprocess.Popen",
+                    return_value=process,
+                ),
+                self.assertRaisesRegex(RuntimeError, "probe.stderr.log"),
+            ):
+                run_smoke({}, error_log)
+
+            self.assertEqual(error_log.read_text(), "specific child failure\n")
+            self.assertEqual(error_log.stat().st_mode & 0o777, 0o600)
+
+
+class LiveAuthenticationContractTest(unittest.IsolatedAsyncioTestCase):
+    async def test_wallet_verification_sends_exact_frontend_origin(self) -> None:
+        private_key = f"0x{1:064x}"
+        requests: list[tuple[str, dict[str, str] | None]] = []
+
+        class Response:
+            def __init__(self, body: dict[str, str]) -> None:
+                self.body = body
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, str]:
+                return self.body
+
+        class Client:
+            async def post(self, path: str, **kwargs):
+                requests.append((path, kwargs.get("headers")))
+                if path.endswith("challenge"):
+                    return Response({"challenge": "sign me", "nonce": "nonce"})
+                return Response({"access_token": "token"})
+
+        await authenticate(Client(), private_key, "https://nebula-gcp.vercel.app")
+
+        self.assertEqual(
+            requests,
+            [
+                ("/v1/auth/challenge", None),
+                ("/v1/auth/verify", {"Origin": "https://nebula-gcp.vercel.app"}),
+            ],
+        )
 
 
 class CutoverWizardContractTest(unittest.TestCase):

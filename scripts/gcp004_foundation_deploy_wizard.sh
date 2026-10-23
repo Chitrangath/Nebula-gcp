@@ -169,6 +169,7 @@ run_wizard() {
   ask_public region "Exact owner-approved Cloud Run region"
   ask_public service_name "Cloud Run service name"
   ask_public frontend_origin "Exact Vercel frontend production HTTPS origin"
+  frontend_origin=$(canonicalize_https_origin FRONTEND_URL "$frontend_origin")
   ask_public contract_address "Existing NebulaPayment deployed contract address"
   ask_public deployment_block "Existing contract deployment block"
   ask_public owner_address "Existing contract owner address"
@@ -176,7 +177,6 @@ run_wizard() {
   reject_placeholder GCP_PROJECT_ID "$project"
   reject_placeholder GCP_REGION "$region"
   reject_placeholder CLOUD_RUN_SERVICE "$service_name"
-  require_https_origin FRONTEND_URL "$frontend_origin"
   reject_placeholder NEBULA_PAYMENT_CONTRACT "$contract_address"; reject_placeholder CONTRACT_DEPLOYMENT_BLOCK "$deployment_block"
   reject_placeholder CONTRACT_OWNER_ADDRESS "$owner_address"; reject_placeholder CONTRACT_VERIFIER_ADDRESS "$verifier_address"
   confirm_action "I-ACCEPT-COST-RISK" "Billing, logs, builds, registry, secrets, egress, R2, and Supabase can incur charges; budgets are not hard caps."

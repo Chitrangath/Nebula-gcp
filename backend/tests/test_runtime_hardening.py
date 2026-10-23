@@ -10,6 +10,7 @@ from app.services.blockchain_events import CriticalReconciliationError, EventPol
 from app.services.blockchain_service import FakeBlockchainBackend
 from app.services.chain_outbox import prepare_and_broadcast, rebroadcast_prepared
 from app.services.tx_signer import FakeSigner
+from app.utils import uuid_to_bytes32
 
 
 def _intent() -> ChainTransaction:
@@ -210,6 +211,117 @@ class ChangedBlockBackend(FakeBlockchainBackend):
 
     def get_block(self, block_identifier):
         return {"number": block_identifier, "hash": self.block_hash, "timestamp": 0}
+
+
+class HistoricalEventBackend(ChangedBlockBackend):
+    def get_logs(self, filter_params):
+        return [{"historical": True}]
+
+
+class DuplicateEventBackend(HistoricalEventBackend):
+    def get_logs(self, filter_params):
+        return [{"duplicate": True}, {"duplicate": True}]
+
+
+@pytest.mark.asyncio
+async def test_historical_event_for_unknown_job_is_durable_and_does_not_block_cursor(db, monkeypatch):
+    """A fresh database can catch up across events created by an older deployment."""
+    contract = "0x" + "ab" * 20
+    unknown_job_id = uuid.uuid4()
+    monkeypatch.setattr(
+        "app.services.blockchain_events.decode_receipt_logs",
+        lambda receipt, abi: [
+            {
+                "event": "JobCreated",
+                "args": {"jobId": bytes.fromhex(uuid_to_bytes32(unknown_job_id)[2:])},
+                "logIndex": 0,
+                "transactionHash": b"\x11" * 32,
+                "blockNumber": 10,
+                "blockHash": b"\x22" * 32,
+            }
+        ],
+    )
+    poller = EventPoller(
+        blockchain=HistoricalEventBackend(b"\x22" * 32),
+        chain_id=31337,
+        contract_address=contract,
+        deployment_block=10,
+        confirmations=1,
+        finality=1,
+    )
+
+    result = await poller.run_once(db)
+    await db.commit()
+
+    event = (await db.execute(select(BlockchainEvent))).scalar_one()
+    cursor = (await db.execute(select(ChainCursor))).scalar_one()
+    assert result["events"] == 1
+    assert event.job_id is None
+    assert event.event_data["jobId"].startswith("0x")
+    assert cursor.last_scanned_block == 10
+
+
+@pytest.mark.asyncio
+async def test_duplicate_rpc_logs_are_ingested_once(db, monkeypatch):
+    contract = "0x" + "ab" * 20
+    monkeypatch.setattr(
+        "app.services.blockchain_events.decode_receipt_logs",
+        lambda receipt, abi: [
+            {
+                "event": "JobCreated",
+                "args": {},
+                "logIndex": 7,
+                "transactionHash": b"\x33" * 32,
+                "blockNumber": 10,
+                "blockHash": b"\x22" * 32,
+            }
+        ],
+    )
+    poller = EventPoller(
+        blockchain=DuplicateEventBackend(b"\x22" * 32),
+        chain_id=31337,
+        contract_address=contract,
+        deployment_block=10,
+        confirmations=1,
+        finality=1,
+    )
+
+    result = await poller.run_once(db)
+    await db.commit()
+
+    assert result["events"] == 1
+    assert (await db.execute(select(BlockchainEvent))).scalars().all().__len__() == 1
+
+
+@pytest.mark.asyncio
+async def test_conflicting_duplicate_rpc_logs_halt_ingestion(db, monkeypatch):
+    contract = "0x" + "ab" * 20
+
+    def decode(receipt, abi):
+        marker = receipt["logs"][0]
+        return [
+            {
+                "event": "JobCreated",
+                "args": {"amount": 1 if marker.get("first") else 2},
+                "logIndex": 7,
+                "transactionHash": b"\x33" * 32,
+                "blockNumber": 10,
+                "blockHash": b"\x22" * 32,
+            }
+        ]
+
+    monkeypatch.setattr("app.services.blockchain_events.decode_receipt_logs", decode)
+    backend = DuplicateEventBackend(b"\x22" * 32)
+    backend.get_logs = lambda filter_params: [{"first": True}, {"first": False}]
+    poller = EventPoller(
+        blockchain=backend,
+        chain_id=31337,
+        contract_address=contract,
+        deployment_block=10,
+    )
+
+    with pytest.raises(CriticalReconciliationError, match="conflicting payloads"):
+        await poller.run_once(db)
 
 
 @pytest.mark.asyncio

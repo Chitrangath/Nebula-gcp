@@ -91,6 +91,31 @@ require_https_origin() {
   fi
 }
 
+canonicalize_https_origin() {
+  local label="$1" value="$2"
+  require_https_origin "$label" "$value" || return 1
+  python3 -c '
+import re
+import sys
+from urllib.parse import urlsplit
+
+label, value = sys.argv[1:]
+parsed = urlsplit(value)
+host = parsed.hostname or ""
+labels = host.split(".")
+valid_label = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+try:
+    port = parsed.port
+except ValueError:
+    port = -1
+if not host or len(host) > 253 or any(not valid_label.fullmatch(item) for item in labels) or port == -1:
+    print(f"Refusing malformed HTTPS origin for {label}.", file=sys.stderr)
+    raise SystemExit(1)
+authority = host.lower() if port in (None, 443) else f"{host.lower()}:{port}"
+print(f"https://{authority}", end="")
+' "$label" "$value"
+}
+
 require_digest_image() {
   local value="$1"
   if [[ ! "$value" =~ ^[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$ ]]; then

@@ -42,10 +42,47 @@ def validate_roles(values: dict[str, str]) -> tuple[str, str, str, str]:
     return ai_user, provider, worker, executor
 
 
+def run_smoke(env: dict[str, str], error_log: Path, timeout: int = 900) -> str:
+    """Run the bounded journey and retain its diagnostic stderr securely."""
+    process = subprocess.Popen(
+        [sys.executable, str(SMOKE)],
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.terminate()
+        try:
+            stdout, stderr = process.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            stdout, stderr = process.communicate()
+        _write_error_log(error_log, stderr)
+        raise RuntimeError(
+            f"bounded live journey exceeded its 15-minute deadline; inspect {error_log}"
+        ) from None
+    _write_error_log(error_log, stderr)
+    if process.returncode != 0:
+        raise RuntimeError(f"bounded live journey failed; inspect {error_log}")
+    return stdout
+
+
+def _write_error_log(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path.parent.chmod(0o700)
+    path.write_text(content, encoding="utf-8")
+    path.chmod(0o600)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--error-log", type=Path)
     args = parser.parse_args()
 
     try:
@@ -94,30 +131,8 @@ def main() -> int:
                 "RUNNERS_ENABLED": "false",
             }
         )
-        process = subprocess.Popen(
-            [sys.executable, str(SMOKE)],
-            cwd=ROOT,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        try:
-            stdout, _ = process.communicate(timeout=900)
-        except subprocess.TimeoutExpired:
-            process.terminate()
-            try:
-                process.communicate(timeout=30)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.communicate()
-            raise RuntimeError(
-                "bounded live journey exceeded its 15-minute deadline"
-            ) from None
-        if process.returncode != 0:
-            raise RuntimeError(
-                "bounded live journey failed; inspect protected NET-003 logs"
-            )
+        error_log = args.error_log or args.output.with_suffix(".stderr.log")
+        stdout = run_smoke(env, error_log)
         evidence = json.loads(stdout)
         journeys = evidence.get("journeys", [])
         if evidence.get("status") != "passed" or len(journeys) != 2:

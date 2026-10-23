@@ -209,7 +209,9 @@ async def wait_for_api(client: httpx.AsyncClient) -> None:
     )
 
 
-async def authenticate(client: httpx.AsyncClient, private_key: str) -> tuple[str, str]:
+async def authenticate(
+    client: httpx.AsyncClient, private_key: str, frontend_origin: str
+) -> tuple[str, str]:
     """Authenticate through the public wallet challenge interface."""
     account = Account.from_key(private_key)
     wallet = account.address.lower()
@@ -222,6 +224,7 @@ async def authenticate(client: httpx.AsyncClient, private_key: str) -> tuple[str
     verified = await client.post(
         "/v1/auth/verify",
         json={"wallet_address": wallet, "signature": signature, "nonce": body["nonce"]},
+        headers={"Origin": frontend_origin},
     )
     verified.raise_for_status()
     return wallet, verified.json()["access_token"]
@@ -513,10 +516,10 @@ async def main() -> None:
         async with httpx.AsyncClient(base_url=api_origin, timeout=30) as client:
             await wait_for_api(client)
             _, provider_token = await authenticate(
-                client, env["NET003_PROVIDER_PRIVATE_KEY"]
+                client, env["NET003_PROVIDER_PRIVATE_KEY"], env["FRONTEND_URL"]
             )
             _, user_token = await authenticate(
-                client, env["NET003_AI_USER_PRIVATE_KEY"]
+                client, env["NET003_AI_USER_PRIVATE_KEY"], env["FRONTEND_URL"]
             )
             node_response = await client.post(
                 "/v1/nodes",

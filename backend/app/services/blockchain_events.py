@@ -68,6 +68,8 @@ async def record_event(
     )
     existing_event = existing.scalar_one_or_none()
     if existing_event:
+        if existing_event.job_id is None and job_id is not None:
+            existing_event.job_id = job_id
         if existing_event.confirmation_status == "orphaned":
             existing_event.block_number = block_number
             existing_event.block_hash = block_hash
@@ -678,9 +680,26 @@ class EventPoller:
         block = self.blockchain.get_block(end)
         block_timestamps: dict[int, int] = {end: int(block["timestamp"])}
         count = 0
+        decoded_items: list[tuple[dict[str, Any], uuid.UUID | None]] = []
+        seen_log_identities: dict[tuple[str, int], tuple[Any, ...]] = {}
         for log in logs:
             decoded = decode_receipt_logs({"logs": [log]}, self.blockchain.get_abi())
             for item in decoded:
+                identity = (_hex(item["transactionHash"]).lower(), int(item["logIndex"]))
+                signature = (
+                    item["event"],
+                    int(item["blockNumber"]),
+                    _hex(item["blockHash"]).lower(),
+                    repr(_json_value(item["args"])),
+                )
+                prior = seen_log_identities.get(identity)
+                if prior is not None and prior != signature:
+                    raise CriticalReconciliationError(
+                        "RPC returned conflicting payloads for one transaction log identity"
+                    )
+                if prior is not None:
+                    continue
+                seen_log_identities[identity] = signature
                 args = item["args"]
                 job_uuid = None
                 if "jobId" in args:
@@ -688,35 +707,50 @@ class EventPoller:
                         job_uuid = bytes32_to_uuid(_hex(args["jobId"]))
                     except ValueError:
                         job_uuid = None
-                confirmations = latest - int(item["blockNumber"]) + 1
-                event_block = int(item["blockNumber"])
-                if event_block not in block_timestamps:
-                    block_timestamps[event_block] = int(self.blockchain.get_block(event_block)["timestamp"])
-                event_data = _json_value(args)
-                event_data["_blockTimestamp"] = block_timestamps[event_block]
-                event = await record_event(
-                    db,
-                    chain_id=self.chain_id,
-                    chain_instance_id=self.chain_instance_id,
-                    contract_address=self.contract_address,
-                    transaction_hash=_hex(item["transactionHash"]),
-                    log_index=int(item["logIndex"]),
-                    block_number=int(item["blockNumber"]),
-                    block_hash=_hex(item["blockHash"]),
-                    event_name=item["event"],
-                    event_data=event_data,
-                    job_id=job_uuid,
-                )
-                event.confirmation_status = (
-                    "finalized"
-                    if confirmations >= self.finality
-                    else "confirmed"
-                    if confirmations >= self.confirmations
-                    else "pending"
-                )
-                if event.confirmation_status != "pending":
-                    await self._project(db, event)
-                count += 1
+                decoded_items.append((item, job_uuid))
+
+        candidate_job_ids = {job_id for _, job_id in decoded_items if job_id is not None}
+        linked_job_ids: set[uuid.UUID] = set()
+        if candidate_job_ids:
+            linked_job_ids = set(
+                (await db.execute(select(Job.id).where(Job.id.in_(candidate_job_ids)))).scalars().all()
+            )
+        for item, job_uuid in decoded_items:
+            args = item["args"]
+            linked_job_id = job_uuid if job_uuid in linked_job_ids else None
+            confirmations = latest - int(item["blockNumber"]) + 1
+            event_block = int(item["blockNumber"])
+            if event_block not in block_timestamps:
+                block_timestamps[event_block] = int(self.blockchain.get_block(event_block)["timestamp"])
+            event_data = _json_value(args)
+            event_data["_blockTimestamp"] = block_timestamps[event_block]
+            event = await record_event(
+                db,
+                chain_id=self.chain_id,
+                chain_instance_id=self.chain_instance_id,
+                contract_address=self.contract_address,
+                transaction_hash=_hex(item["transactionHash"]),
+                log_index=int(item["logIndex"]),
+                block_number=int(item["blockNumber"]),
+                block_hash=_hex(item["blockHash"]),
+                event_name=item["event"],
+                event_data=event_data,
+                # A replacement database may scan contract history containing
+                # jobs that were created by an older application deployment.
+                # Keep the raw chain jobId in event_data, but only create the
+                # relational link when its local Job exists.
+                job_id=linked_job_id,
+            )
+            event.confirmation_status = (
+                "finalized"
+                if confirmations >= self.finality
+                else "confirmed"
+                if confirmations >= self.confirmations
+                else "pending"
+            )
+            if event.confirmation_status != "pending":
+                await self._project(db, event)
+            count += 1
 
         cursor = await self._cursor(db)
         if cursor is None:
