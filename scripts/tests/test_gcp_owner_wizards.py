@@ -384,6 +384,10 @@ class CutoverWizardContractTest(unittest.TestCase):
 
         self.assertNotIn(".git-local", text)
         self.assertIn('git -C "${NEBULA_WIZARD_REPO_ROOT}" archive', text)
+        self.assertNotIn("--strip-components=1", text)
+        self.assertIn('"$staging_dir/frontend/vercel.json"', text)
+        self.assertIn("trap", text)
+        self.assertIn('rm -rf -- "$STAGING_DIR"', text)
 
 
 class LaptopWizardContractTest(unittest.TestCase):

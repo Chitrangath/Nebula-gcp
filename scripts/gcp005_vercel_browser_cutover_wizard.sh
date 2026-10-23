@@ -13,6 +13,13 @@ readonly VALIDATOR="${NEBULA_WIZARD_REPO_ROOT}/scripts/validate_gcp_demo_config.
 readonly RENDERER="${NEBULA_WIZARD_REPO_ROOT}/scripts/render_gcp_demo_config.py"
 readonly MATERIALIZED_SERVICE="${NEBULA_GCP_STATE_DIR}/cloud-run-service.owner.json"
 readonly MATERIALIZED_REWRITE="${NEBULA_GCP_STATE_DIR}/vercel-rewrite.owner.json"
+STAGING_DIR=""
+
+cleanup_staging() {
+  [[ -z "${STAGING_DIR:-}" ]] || rm -rf -- "$STAGING_DIR"
+}
+
+trap cleanup_staging EXIT
 
 show_plan() {
   printf '%s\n' \
@@ -102,13 +109,13 @@ run_wizard() {
   stage 5 7 "Deploy/redeploy the Vercel frontend only after rewrite validation"
   local staging_dir
   staging_dir=$(mktemp -d)
+  STAGING_DIR="$staging_dir"
   git -C "${NEBULA_WIZARD_REPO_ROOT}" archive --format=tar HEAD frontend > "${staging_dir}/frontend.tar"
-  tar -xf "${staging_dir}/frontend.tar" -C "$staging_dir" --strip-components=1
+  tar -xf "${staging_dir}/frontend.tar" -C "$staging_dir"
   rm -f -- "${staging_dir}/frontend.tar"
-  cp "$MATERIALIZED_REWRITE" "$staging_dir/vercel.json"
+  cp "$MATERIALIZED_REWRITE" "$staging_dir/frontend/vercel.json"
   confirm_action "DEPLOY-VERCEL" "Deploy the isolated reviewed frontend copy to production?"
   run_command "deploy validated Vercel frontend" vercel deploy --prod --cwd "$staging_dir"
-  printf 'Remove the temporary staging directory after acceptance or rollback: %s\n' "$staging_dir"
 
   stage 6 7 "Run genuine browser authentication acceptance"
   open_url "$frontend_origin"
