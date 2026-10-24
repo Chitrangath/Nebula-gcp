@@ -470,6 +470,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/worker/leases/{lease_id}/model-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Worker Model Download Url
+         * @description Issue a short private-object capability without buffering weights in the API.
+         */
+        get: operations["worker_model_download_url_v1_worker_leases__lease_id__model_url_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/worker/leases/{lease_id}/result-upload": {
         parameters: {
             query?: never;
@@ -673,6 +693,12 @@ export interface components {
         };
         /** JobResponse */
         JobResponse: {
+            /** Assigned Gpu Name */
+            assigned_gpu_name?: string | null;
+            /** Assigned Node Id */
+            assigned_node_id?: string | null;
+            /** Assigned Provider Address */
+            assigned_provider_address?: string | null;
             /** Assignment Transaction */
             assignment_transaction?: {
                 [key: string]: unknown;
@@ -744,8 +770,42 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /**
+         * NodeCapabilities
+         * @description The authenticated worker's code-supported model set.
+         */
+        NodeCapabilities: {
+            /** Supported Models */
+            supported_models: ("resnet50" | "bert-base")[];
+        };
+        /** NodeJobResponse */
+        NodeJobResponse: {
+            /** Completed At */
+            completed_at: string | null;
+            /** Job Id */
+            job_id: string;
+            /** Model Id */
+            model_id: string;
+            /** Status */
+            status: string;
+        };
+        /** NodeLeaseResponse */
+        NodeLeaseResponse: {
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Job Id */
+            job_id: string;
+            /** Model Id */
+            model_id: string;
+            /** Status */
+            status: string;
+        };
         /** NodeResponse */
         NodeResponse: {
+            active_lease: components["schemas"]["NodeLeaseResponse"] | null;
             /** Active Leases */
             active_leases: number;
             /** Gpu Name */
@@ -754,8 +814,12 @@ export interface components {
             id: string;
             /** Last Heartbeat */
             last_heartbeat: string | null;
+            /** Recent Jobs */
+            recent_jobs: components["schemas"]["NodeJobResponse"][];
             /** Status */
             status: string;
+            /** Supported Models */
+            supported_models: string[];
             /** Vram Gb */
             vram_gb: number | null;
             /** Worker Signer Address */
@@ -3188,6 +3252,93 @@ export interface operations {
             };
         };
     };
+    worker_model_download_url_v1_worker_leases__lease_id__model_url_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string;
+            };
+            path: {
+                lease_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Problem response */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Problem response */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Problem response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Problem response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Problem response */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Problem response */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Problem response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
     worker_result_upload_v1_worker_leases__lease_id__result_upload_post: {
         parameters: {
             query?: never;
@@ -3290,7 +3441,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["NodeCapabilities"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

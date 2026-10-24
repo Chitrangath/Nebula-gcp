@@ -18,6 +18,7 @@ from app.models import (
     Job,
     JobAttempt,
     Lease,
+    Node,
     Payment,
     Proof,
     ReconciliationIncident,
@@ -75,6 +76,9 @@ class JobResponse(BaseModel):
     reconciliation_health: str = "pending"
     started_at: str | None = None
     completed_at: str | None = None
+    assigned_node_id: str | None = None
+    assigned_gpu_name: str | None = None
+    assigned_provider_address: str | None = None
 
 
 class ConfirmEscrowRequest(BaseModel):
@@ -104,7 +108,7 @@ async def create_new_job(
     storage: StorageBackend = Depends(get_storage),
 ) -> JobResponse:
     """Create a job from one authenticated, bounded, server-validated input upload."""
-    from app.services.input_upload import InputTooLargeError, InputUploadError, accept_image_upload
+    from app.services.input_upload import InputTooLargeError, InputUploadError, accept_image_upload, accept_text_upload
 
     model_result = await db.execute(select(SupportedModel).where(SupportedModel.id == model_id))
     model = model_result.scalar_one_or_none()
@@ -121,7 +125,10 @@ async def create_new_job(
         deadline = deadline.replace(tzinfo=timezone.utc)
 
     try:
-        accepted = await accept_image_upload(
+        accept_upload = (
+            accept_text_upload if model.id == "bert-base" and model.input_type == "text" else accept_image_upload
+        )
+        accepted = await accept_upload(
             input_file,
             supported_formats=model.supported_formats or [],
             max_size_bytes=(model.max_input_size_mb or 0) * 1024 * 1024,
@@ -286,6 +293,12 @@ async def get_single_job(
     if job.user_id != user.id:
         raise HTTPException(status_code=403, detail="Not your job")
 
+    assigned_node = None
+    assigned_provider = None
+    if job.assigned_node_id:
+        assigned_node = await db.get(Node, job.assigned_node_id)
+        if assigned_node:
+            assigned_provider = await db.get(User, assigned_node.provider_id)
     attempts = list(
         (await db.execute(select(JobAttempt).where(JobAttempt.job_id == job.id).order_by(JobAttempt.attempt_number)))
         .scalars()
@@ -358,6 +371,9 @@ async def get_single_job(
         created_at=job.created_at.isoformat() if job.created_at else "",
         on_chain_state=chain_state,
         attempt_count=len(attempts),
+        assigned_node_id=str(assigned_node.id) if assigned_node else None,
+        assigned_gpu_name=assigned_node.gpu_name if assigned_node else None,
+        assigned_provider_address=assigned_provider.wallet_address if assigned_provider else None,
         current_lease_status=lease.status if lease else None,
         proof_verification_status=("valid" if proof.valid else "invalid")
         if proof and proof.valid is not None

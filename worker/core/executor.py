@@ -5,6 +5,7 @@ import base64
 import hashlib
 import logging
 import uuid
+from contextlib import suppress
 from datetime import datetime, timezone
 
 import aiohttp
@@ -24,14 +25,24 @@ class JobExecutor:
             self.executor = executor
         elif getattr(settings, "EXECUTOR_ADAPTER", "fixture") == "fixture":
             self.executor = DeterministicFixtureExecutor()
-        elif settings.EXECUTOR_ADAPTER == "resnet50":
+        elif settings.EXECUTOR_ADAPTER in {"resnet50", "multimodel"}:
             from core.model_loader import ModelLoader
             from core.resnet50_executor import ResNet50Executor
 
-            self.executor = ResNet50Executor(device=settings.EXECUTOR_DEVICE)
+            if settings.EXECUTOR_ADAPTER == "multimodel":
+                from core.multimodel_executor import MultiModelExecutor
+
+                self.executor = MultiModelExecutor(
+                    device=settings.EXECUTOR_DEVICE, vocab_path=settings.BERT_VOCAB_PATH
+                )
+            else:
+                self.executor = ResNet50Executor(device=settings.EXECUTOR_DEVICE)
             self.model_loader = ModelLoader(
                 settings.MODEL_CACHE_DIR,
                 download_factory=self._download_model_chunks,
+                timeout_seconds=getattr(
+                    settings, "MODEL_DOWNLOAD_TIMEOUT_SECONDS", 900
+                ),
             )
         else:
             raise ValueError("unknown worker executor adapter")
@@ -39,7 +50,13 @@ class JobExecutor:
 
     async def _download_model_chunks(self, spec):
         if spec.artifact_url.startswith(("https://", "http://")):
-            response = await self.session.get(spec.artifact_url, allow_redirects=False)
+            response = await self.session.get(
+                spec.artifact_url,
+                allow_redirects=False,
+                timeout=aiohttp.ClientTimeout(
+                    total=getattr(self.settings, "MODEL_DOWNLOAD_TIMEOUT_SECONDS", 900)
+                ),
+            )
             response.raise_for_status()
         else:
             response = await self.request("GET", spec.artifact_url)
@@ -65,7 +82,9 @@ class JobExecutor:
                 lease = None
                 try:
                     await self.request(
-                        "POST", f"/v1/worker/nodes/{self.settings.NODE_ID}/heartbeat"
+                        "POST",
+                        f"/v1/worker/nodes/{self.settings.NODE_ID}/heartbeat",
+                        json=self._capabilities(),
                     )
                     lease = (
                         await (
@@ -73,7 +92,13 @@ class JobExecutor:
                         ).json()
                     )["lease"]
                     if lease:
-                        await self.execute(lease)
+                        heartbeat = asyncio.create_task(self._keep_node_online())
+                        try:
+                            await self.execute(lease)
+                        finally:
+                            heartbeat.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await heartbeat
                 except Exception as exc:  # noqa: BLE001 - cycle isolation must survive any adapter failure
                     logger.warning(
                         "worker_cycle_failed error_type=%s", type(exc).__name__
@@ -92,6 +117,29 @@ class JobExecutor:
                             )
                 await asyncio.sleep(self.settings.POLL_INTERVAL_SECONDS)
 
+    async def _keep_node_online(self):
+        """Maintain liveness while downloading weights or running inference."""
+        while True:
+            await asyncio.sleep(10)
+            try:
+                response = await self.request(
+                    "POST",
+                    f"/v1/worker/nodes/{self.settings.NODE_ID}/heartbeat",
+                    json=self._capabilities(),
+                )
+                response.close()
+            except Exception as exc:  # noqa: BLE001 - transient heartbeat failures must not kill inference
+                logger.warning(
+                    "worker_heartbeat_failed error_type=%s", type(exc).__name__
+                )
+
+    def _capabilities(self):
+        return {
+            "supported_models": ["resnet50", "bert-base"]
+            if self.settings.EXECUTOR_ADAPTER == "multimodel"
+            else ["resnet50"]
+        }
+
     async def execute(self, lease):
         lid = lease["lease_id"]
         await self.request("POST", f"/v1/worker/leases/{lid}/ack", json={})
@@ -101,25 +149,55 @@ class JobExecutor:
             (lease.get("model_hash") or "").removeprefix("sha256:").removeprefix("0x")
         )
         if self.model_loader is not None:
-            from core.model_loader import RESNET50_DEPENDENCIES, ModelSpec
+            from core.model_loader import (
+                ModelSpec,
+                approved_runtime_dependencies,
+            )
+
+            is_bert = lease["model_id"] == "bert-base"
+            if is_bert:
+                from core.bert_executor import (
+                    BERT_CHECKPOINTS,
+                    BERT_REVISION,
+                    BERT_SHA256,
+                )
+
+                if (
+                    expected != BERT_SHA256
+                    or lease["model_version"] != BERT_REVISION
+                    or lease["preprocessing_version"] != "bert-sentiment-v1"
+                ):
+                    raise ValueError("BERT lease does not match the pinned release")
+            artifact_url = (
+                self.settings.MODEL_ARTIFACT_URL if not is_bert else None
+            ) or f"/v1/worker/leases/{lid}/model"
+            if is_bert:
+                capability = await self.request(
+                    "GET", f"/v1/worker/leases/{lid}/model-url"
+                )
+                artifact_url = (await capability.json())["url"]
+                if not artifact_url.startswith("https://"):
+                    raise ValueError(
+                        "BERT requires a private HTTPS artifact capability"
+                    )
 
             spec = ModelSpec(
                 model_id=lease["model_id"],
                 model_version=lease["model_version"],
-                artifact_url=(
-                    self.settings.MODEL_ARTIFACT_URL or f"/v1/worker/leases/{lid}/model"
-                ),
+                artifact_url=artifact_url,
                 sha256=expected,
                 max_artifact_bytes=self.settings.MAX_MODEL_ARTIFACT_BYTES,
-                architecture="torchvision.models.resnet50",
+                architecture="transformers.BertForSequenceClassification"
+                if is_bert
+                else "torchvision.models.resnet50",
                 framework="pytorch-safetensors",
                 preprocessing_version=lease["preprocessing_version"],
-                input_type="image",
-                max_input_bytes=16 * 1024 * 1024,
+                input_type="text" if is_bert else "image",
+                max_input_bytes=65536 if is_bert else 16 * 1024 * 1024,
                 vram_required_gb=4,
-                checkpoints=tuple(CHECKPOINTS),
+                checkpoints=tuple(BERT_CHECKPOINTS if is_bert else CHECKPOINTS),
                 serialization_version="safetensors-v1",
-                dependency_versions=RESNET50_DEPENDENCIES,
+                dependency_versions=approved_runtime_dependencies(lease["model_id"]),
             )
             model = (await self.model_loader.get_artifact(spec)).read_bytes()
         else:
@@ -129,7 +207,9 @@ class JobExecutor:
             raise ValueError("model hash mismatch")
         if hashlib.sha256(input_data).hexdigest() != lease["input_hash"]:
             raise ValueError("input hash mismatch")
-        output, trace = self.executor.execute(model, input_data, lease["model_id"])
+        output, trace = await asyncio.to_thread(
+            self.executor.execute, model, input_data, lease["model_id"]
+        )
         output_hash = hashlib.sha256(output).digest()
         root = build_merkle_root([*trace, output_hash])
         key = f"results/{lease['job_id']}/{lease['attempt_id']}/output"
@@ -170,7 +250,9 @@ class JobExecutor:
             "output_hash": "0x" + output_hash.hex(),
             "proof_timestamp": ts,
             "lease_expires_at": expires,
-            "checkpoint_names": CHECKPOINTS,
+            "checkpoint_names": ["tokenize", "forward", "pool", "project"]
+            if lease["model_id"] == "bert-base"
+            else CHECKPOINTS,
             "trace_hashes": ["0x" + v.hex() for v in trace],
             "signature": sign_envelope(env, self.settings.PRIVATE_KEY),
             "result_file_key": key,

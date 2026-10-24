@@ -12,7 +12,13 @@ MODEL_CONFIGS: dict[str, dict[str, object]] = {
         "std": [0.229, 0.224, 0.225],
         "num_classes": 1000,
         "preprocessing_version": "resnet50-v1",
-    }
+    },
+    "bert-base": {
+        "max_length": 512,
+        "tokenizer": "nlptown/bert-base-multilingual-uncased-sentiment",
+        "tokenizer_sha256": "87b44292b452f6c05afa49b2e488e7eedf79ea4f4c39db6f2f4b37764228ef3f",
+        "preprocessing_version": "bert-sentiment-v1",
+    },
 }
 
 

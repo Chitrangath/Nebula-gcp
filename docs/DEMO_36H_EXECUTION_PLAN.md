@@ -26,6 +26,8 @@ The contract, backend, R2, and Arbitrum Sepolia deployment already exist. No con
 
 ### DEMO-002 — Scheduler assignment across two providers (5h)
 
+**Implementation status:** complete and locally verified. Live two-device acceptance remains part of DEMO-008.
+
 - Run two workers concurrently with distinct node IDs.
 - Verify leases are exclusive, heartbeats are current, and only one provider receives a given job.
 - Add visible assignment state and assigned provider/node to job details.
@@ -33,6 +35,8 @@ The contract, backend, R2, and Arbitrum Sepolia deployment already exist. No con
 **Done when:** one submitted job is assigned to exactly one available provider and the other provider remains healthy/available.
 
 ### DEMO-003 — Real BERT model path (6h)
+
+**Implementation status:** complete and verified with real ResNet50 and BERT weights on the RTX 3050. Live artifact activation and the RTX 5050 device check remain deployment/DEMO-008 gates.
 
 - Add a real immutable BERT artifact and SHA-256 record.
 - Implement BERT model loading/execution behind the existing executor seam.
@@ -43,6 +47,8 @@ The contract, backend, R2, and Arbitrum Sepolia deployment already exist. No con
 
 ### DEMO-004 — Production user job experience (5h)
 
+**Implementation status:** complete and browser-contract verified. Production deployment and the Device A live journey remain DEMO-008 acceptance work.
+
 - Replace placeholder/demo-only submission behavior with model discovery from the backend.
 - Support image upload for ResNet50 and text upload/input for BERT.
 - Show validation, escrow pending/confirmed, queued, assigned, running, proof verified, settled, failed, and refunded states.
@@ -51,6 +57,8 @@ The contract, backend, R2, and Arbitrum Sepolia deployment already exist. No con
 **Done when:** Device A can submit either model and follow the job without terminal commands.
 
 ### DEMO-005 — Production provider dashboard (4h)
+
+**Implementation status:** complete and browser-contract verified. Production deployment and independent Device B/C acceptance remain DEMO-008 work.
 
 - Replace placeholder provider dashboard and registration page.
 - Show provider wallet, node status, active lease, model capabilities, completed jobs, earnings, and settlement links.

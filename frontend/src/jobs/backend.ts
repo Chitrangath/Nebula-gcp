@@ -15,8 +15,21 @@ export interface SupportedModel {
   price_base_units: string
 }
 
+export interface ResNetJobResult {
+  model_id: 'resnet50'
+  top_k: Array<{ index: number; probability_hex: string }>
+}
+
+export interface BertJobResult {
+  model_id: 'bert-base'
+  stars: number
+  scores: Array<{ stars: number; probability_hex: string }>
+}
+
+export type JobResult = ResNetJobResult | BertJobResult
+
 const formatMimeTypes: Record<string, string> = {
-  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', txt: 'text/plain',
 }
 
 export function modelMimeTypes(model: SupportedModel): string[] {
@@ -52,6 +65,52 @@ export async function getJob(jobId: string, signal?: AbortSignal): Promise<Job> 
 export async function downloadJobResult(jobId: string, signal?: AbortSignal): Promise<Blob> {
   const response = await requestApiResponse(`/jobs/${encodeURIComponent(jobId)}/result`, { method: 'GET', signal })
   return response.blob()
+}
+
+function parseJobResult(value: unknown): JobResult {
+  if (!value || typeof value !== 'object' || !('model_id' in value)) throw new Error('Result has an invalid format')
+  const result = value as Record<string, unknown>
+  if (result.model_id === 'resnet50' && Array.isArray(result.top_k) && result.top_k.every((item) => {
+    if (!item || typeof item !== 'object') return false
+    const row = item as Record<string, unknown>
+    return typeof row.index === 'number' && Number.isInteger(row.index) && typeof row.probability_hex === 'string'
+  })) return {
+    model_id: 'resnet50',
+    top_k: result.top_k.map((item) => ({ index: item.index as number, probability_hex: item.probability_hex as string })),
+  }
+  if (result.model_id === 'bert-base' && typeof result.stars === 'number' && Number.isInteger(result.stars) && Array.isArray(result.scores) && result.scores.every((item) => {
+    if (!item || typeof item !== 'object') return false
+    const row = item as Record<string, unknown>
+    return typeof row.stars === 'number' && Number.isInteger(row.stars) && typeof row.probability_hex === 'string'
+  })) return {
+    model_id: 'bert-base',
+    stars: result.stars,
+    scores: result.scores.map((item) => ({ stars: item.stars as number, probability_hex: item.probability_hex as string })),
+  }
+  throw new Error('Result has an invalid format')
+}
+
+export async function getJobResult(jobId: string, signal?: AbortSignal): Promise<JobResult> {
+  const response = await requestApiResponse(`/jobs/${encodeURIComponent(jobId)}/result`, { method: 'GET', signal })
+  try {
+    return parseJobResult(JSON.parse(await response.text()) as unknown)
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Result has an invalid format') throw error
+    throw new Error('Result has an invalid format')
+  }
+}
+
+export function probabilityFromHexFloat(value: string): number | null {
+  const match = /^(-?)0x([0-9a-f]+)(?:\.([0-9a-f]*))?p([+-]?\d+)$/i.exec(value)
+  if (!match) return null
+  const integer = Number.parseInt(match[2], 16)
+  const fractionDigits = match[3] ?? ''
+  let fraction = 0
+  for (let index = 0; index < fractionDigits.length; index += 1) {
+    fraction += Number.parseInt(fractionDigits[index], 16) / (16 ** (index + 1))
+  }
+  const number = (integer + fraction) * (2 ** Number.parseInt(match[4], 10))
+  return (match[1] ? -number : number)
 }
 
 function toBackendJob(job: JobResponse): BackendJob {

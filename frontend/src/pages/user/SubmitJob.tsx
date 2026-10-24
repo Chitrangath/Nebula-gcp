@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 
 import { ApiProblemError, ApiUnavailableError } from '../../api/client'
 import { getAuthenticatedWallet } from '../../api/session'
@@ -25,9 +26,10 @@ export default function SubmitJob({ models: suppliedModels, backend = jobBackend
   const [models, setModels] = useState<SupportedModel[]>(suppliedModels ?? [])
   const [modelId, setModelId] = useState(suppliedModels?.[0]?.id ?? '')
   const [input, setInput] = useState<File | null>(null)
+  const [textInput, setTextInput] = useState('')
   const [stage, setStage] = useState<SubmissionStage | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [complete, setComplete] = useState(false)
+  const [submittedJobId, setSubmittedJobId] = useState<string | null>(null)
   const [review, setReview] = useState<FundingSnapshot | null>(null)
   const checkpoint = useRef<SubmissionCheckpoint | null>(null)
   const controller = useRef<AbortController | null>(null)
@@ -37,7 +39,7 @@ export default function SubmitJob({ models: suppliedModels, backend = jobBackend
   useEffect(() => {
     if (suppliedModels) return
     const loadController = new AbortController()
-    void listSupportedModels(loadController.signal).then((available) => available.filter((model) => model.id === 'resnet50')).then((available) => {
+    void listSupportedModels(loadController.signal).then((available) => available.filter((model) => ['resnet50', 'bert-base'].includes(model.id))).then((available) => {
       setModels(available); setModelId(available[0]?.id ?? '')
     }).catch((caught) => { if (!loadController.signal.aborted) setError(safeError(caught)) })
     return () => loadController.abort()
@@ -47,9 +49,18 @@ export default function SubmitJob({ models: suppliedModels, backend = jobBackend
 
   async function handleSubmit(event: FormEvent): Promise<void> {
     event.preventDefault()
-    if (!selectedModel || !input) { setError('Select the ResNet50 model and an input image'); return }
-    if (selectedModel.max_input_size_mb && input.size > selectedModel.max_input_size_mb * 1024 * 1024) { setError(`Input is too large; maximum size is ${selectedModel.max_input_size_mb} MB`); return }
-    if (!modelMimeTypes(selectedModel).includes(input.type)) { setError('Choose a supported JPEG or PNG input'); return }
+    if (!selectedModel) { setError('Select an approved model'); return }
+    let submissionInput = input
+    if (selectedModel.input_type === 'text') {
+      const textBytes = new TextEncoder().encode(textInput)
+      if (!textInput.trim()) { setError('Enter text for BERT sentiment analysis, then try again'); return }
+      if (textInput.includes('\0')) { setError('Text cannot contain null characters'); return }
+      if (textBytes.byteLength > 65_536) { setError('Text is too large; maximum size is 64 KiB'); return }
+      submissionInput = new File([textBytes], 'input.txt', { type: 'text/plain' })
+    }
+    if (!submissionInput) { setError('Choose a JPEG or PNG image, then try again'); return }
+    if (selectedModel.max_input_size_mb && submissionInput.size > selectedModel.max_input_size_mb * 1024 * 1024) { setError(`Input is too large; maximum size is ${selectedModel.max_input_size_mb} MB`); return }
+    if (!modelMimeTypes(selectedModel).includes(submissionInput.type)) { setError('Choose a supported JPEG or PNG input'); return }
     if (!chain) { setError('Connect an Arbitrum Sepolia wallet before funding a job'); return }
     const activeAuthenticatedWallet = authenticatedWallet === undefined ? getAuthenticatedWallet() : authenticatedWallet
     if (!review) {
@@ -71,12 +82,12 @@ export default function SubmitJob({ models: suppliedModels, backend = jobBackend
     const activeController = new AbortController()
     controller.current = activeController
     checkpoint.current ??= { idempotencyKey: crypto.randomUUID() }
-    setError(null); setComplete(false)
+    setError(null); setSubmittedJobId(null)
     try {
-      await submitJob({ modelId: selectedModel.id, input, deadline: new Date(Date.now() + 86_400_000).toISOString() }, {
+      const submission = await submitJob({ modelId: selectedModel.id, input: submissionInput, deadline: new Date(Date.now() + 86_400_000).toISOString() }, {
         backend, chain, signal: activeController.signal, onStage: setStage, authenticatedWallet: activeAuthenticatedWallet, reviewedFunding: review,
       }, checkpoint.current)
-      setComplete(true)
+      setSubmittedJobId(submission.job.id)
     } catch (caught) {
       if (!activeController.signal.aborted) {
         if (caught instanceof FundingReviewChangedError) setReview(null)
@@ -89,19 +100,23 @@ export default function SubmitJob({ models: suppliedModels, backend = jobBackend
 
   return (
     <div className="max-w-2xl">
-      <h1 className="text-2xl font-bold mb-2">Submit Job</h1>
-      <p className="text-gray-600 mb-6">Upload one bounded ResNet50 image and fund its Arbitrum Sepolia escrow.</p>
-      <form onSubmit={(event) => void handleSubmit(event)} className="space-y-5">
-        <label className="block"><span className="block font-medium mb-1">Approved model</span>
-          <select value={modelId} onChange={(event) => { setModelId(event.target.value); checkpoint.current = null; setReview(null) }} className="w-full border rounded p-2">
-            {models.length === 0 ? <option value="">No ResNet50 model available</option> : null}
+      <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-primary-700">AI user workspace</p>
+      <h1 className="text-3xl font-bold tracking-tight">Submit an inference job</h1>
+      <p className="mb-8 mt-2 text-gray-600">Choose a backend-approved model, add its input, then review and fund the Arbitrum Sepolia escrow.</p>
+      <form onSubmit={(event) => void handleSubmit(event)} className="space-y-6 rounded-xl border border-gray-200 bg-white p-5 sm:p-6">
+        <label className="block"><span className="mb-2 block font-medium">Approved model</span>
+          <select value={modelId} onChange={(event) => { setModelId(event.target.value); setInput(null); setTextInput(''); setError(null); setSubmittedJobId(null); checkpoint.current = null; setReview(null) }} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white p-3 focus:border-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-200">
+            {models.length === 0 ? <option value="">No approved model available</option> : null}
             {models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
           </select>
         </label>
-        <label className="block"><span className="block font-medium mb-1">ResNet input</span>
-          <input type="file" accept={selectedModel ? modelMimeTypes(selectedModel).join(',') : undefined} onChange={(event) => { setInput(event.target.files?.[0] ?? null); checkpoint.current = null; setReview(null) }} className="w-full border rounded p-2" />
-          {selectedModel?.max_input_size_mb ? <span className="text-sm text-gray-600">Maximum {selectedModel.max_input_size_mb} MB</span> : null}
-        </label>
+        {selectedModel?.input_type === 'text' ? <div><label htmlFor="bert-input" className="mb-2 block font-medium">Text to analyse</label>
+          <textarea id="bert-input" value={textInput} onChange={(event) => { setTextInput(event.target.value); setError(null); setSubmittedJobId(null); checkpoint.current = null; setReview(null) }} rows={7} maxLength={65_536} aria-describedby="bert-input-help" className="w-full rounded-lg border border-gray-300 p-3 leading-6 focus:border-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-200" />
+          <span id="bert-input-help" className="mt-2 block text-sm text-gray-600">UTF-8 text, maximum 64 KiB. The worker rejects inputs above its 512-token limit rather than truncating them.</span>
+        </div> : <div><label htmlFor="resnet-input" className="mb-2 block font-medium">ResNet input image</label>
+          <input id="resnet-input" type="file" accept={selectedModel ? modelMimeTypes(selectedModel).join(',') : undefined} onChange={(event) => { setInput(event.target.files?.[0] ?? null); setError(null); setSubmittedJobId(null); checkpoint.current = null; setReview(null) }} className="min-h-11 w-full rounded-lg border border-gray-300 p-3 file:mr-3 file:rounded file:border-0 file:bg-primary-50 file:px-3 file:py-2 file:font-medium file:text-primary-800" />
+          {selectedModel?.max_input_size_mb ? <span className="mt-2 block text-sm text-gray-600">JPEG or PNG, maximum {selectedModel.max_input_size_mb} MB.</span> : null}
+        </div>}
         <div className="rounded border border-amber-300 bg-amber-50 p-4 text-sm">
           Nebula verifies the live contract price and wallet funds. If needed, your wallet requests an exact USDC approval, followed by one <code>createJob</code> escrow transaction. Only the confirmed transaction hash is sent to the backend.
         </div>
@@ -113,12 +128,12 @@ export default function SubmitJob({ models: suppliedModels, backend = jobBackend
           <div><dt className="font-medium">Exact escrow amount</dt><dd>{review.jobPrice.toString()} base units</dd></div>
           <div><dt className="font-medium">Estimated gas reserve</dt><dd>{review.requiredNativeBalance.toString()} wei</dd></div>
         </dl> : null}
-        <button type="submit" disabled={stage !== null || complete || models.length === 0} className="bg-primary-600 text-white px-4 py-2 rounded-lg disabled:opacity-60">
+        {error ? <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800"><p className="font-semibold">The job was not submitted</p><p className="mt-1 text-sm">{error}</p></div> : null}
+        <button type="submit" disabled={stage !== null || submittedJobId !== null || models.length === 0} className="min-h-11 rounded-lg bg-primary-600 px-5 py-3 font-semibold text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
           {stage ? stageLabels[stage] : error && checkpoint.current ? 'Retry submission' : review ? 'Confirm upload and sign' : 'Review funding'}
         </button>
       </form>
-      {error ? <p role="alert" className="mt-4 text-red-700">{error}</p> : null}
-      {complete ? <p role="status" className="mt-4 text-green-700">Escrow confirmed. Your job is ready for assignment.</p> : null}
+      {submittedJobId ? <div role="status" className="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-900"><p className="font-semibold">Escrow confirmed. Your job is ready for assignment.</p><Link to={`/user/jobs/${submittedJobId}`} className="mt-2 inline-flex min-h-11 items-center font-semibold underline underline-offset-4">Follow job progress</Link></div> : null}
     </div>
   )
 }

@@ -61,6 +61,30 @@ async def test_backend_derives_key_hash_and_fingerprint_from_accepted_bytes(
 
 
 @pytest.mark.asyncio
+async def test_bert_text_job_uses_exact_upload_hash_and_model_fingerprint(db, image_model):
+    image_model.id = "bert-base"
+    image_model.input_type = "text"
+    image_model.supported_formats = ["txt"]
+    image_model.preprocessing_version = "bert-sentiment-v1"
+    db.add(image_model)
+    _, token = await seed_authed_user(db)
+    review = "Excellent café, highly recommended!\n".encode()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await _post(
+            client, token, data={"model_id": "bert-base"}, files={"input_file": ("review.txt", review, "text/plain")}
+        )
+        assert response.status_code == 200, response.text
+        job_response = await client.get(
+            f"/v1/jobs/{response.json()['id']}", headers={"Authorization": f"Bearer {token}"}
+        )
+    assert job_response.status_code == 200
+    assert job_response.json()["model_id"] == "bert-base"
+    job = (await db.execute(select(Job))).scalar_one()
+    assert job.input_hash == hashlib.sha256(review).hexdigest()
+    assert await app.state.storage.get_object(job.input_file_key) == review
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("filename", "content_type", "payload", "detail"),
     [

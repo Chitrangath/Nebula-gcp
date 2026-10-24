@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { jobBackend, listSupportedModels } from './backend'
+import { getJobResult, jobBackend, listSupportedModels, probabilityFromHexFloat } from './backend'
 import { clearAccessToken, enableSessionRefresh, setAccessToken } from '../api/session'
 
 describe('job backend client', () => {
@@ -38,5 +38,17 @@ describe('job backend client', () => {
   ])('rejects malformed model metadata at the API boundary', async (malformed) => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify([malformed]), { status: 200 }))
     await expect(listSupportedModels()).rejects.toThrow('Invalid model response')
+  })
+
+  it('parses a canonical BERT result without interpreting untrusted fields', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      model_id: 'bert-base', stars: 5, scores: [{ stars: 5, probability_hex: '0x1.0p-1' }], ignored: '<script>',
+    }), { status: 200 }))
+
+    await expect(getJobResult('job-id')).resolves.toEqual({
+      model_id: 'bert-base', stars: 5, scores: [{ stars: 5, probability_hex: '0x1.0p-1' }],
+    })
+    expect(probabilityFromHexFloat('0x1.0p-1')).toBe(0.5)
+    expect(probabilityFromHexFloat('not-a-number')).toBeNull()
   })
 })

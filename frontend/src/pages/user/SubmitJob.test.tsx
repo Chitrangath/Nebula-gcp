@@ -1,6 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 
 import type { SupportedModel } from '../../jobs/backend'
 import type { ChainGateway, JobBackend } from '../../jobs/submitJob'
@@ -9,6 +10,7 @@ import { setAuthenticatedWallet } from '../../api/session'
 
 const account = `0x${'56'.repeat(20)}` as const
 const model: SupportedModel = { id: 'resnet50', name: 'ResNet50', input_type: 'image', supported_formats: ['png', 'jpg', 'jpeg'], max_input_size_mb: 25, price_base_units: '50000' }
+const bertModel: SupportedModel = { id: 'bert-base', name: 'BERT sentiment', input_type: 'text', supported_formats: ['txt'], max_input_size_mb: 1, price_base_units: '50000' }
 
 function dependencies() {
   const backend: JobBackend = {
@@ -29,7 +31,7 @@ describe('SubmitJob', () => {
 
   it('shows the signing summary and completes the ResNet escrow journey', async () => {
     const deps = dependencies()
-    render(<SubmitJob models={[model]} backend={deps.backend} chain={deps.chain} authenticatedWallet={account} />)
+    render(<MemoryRouter><SubmitJob models={[model]} backend={deps.backend} chain={deps.chain} authenticatedWallet={account} /></MemoryRouter>)
     expect(screen.getByText(/exact USDC approval/i)).toBeInTheDocument()
     await userEvent.upload(screen.getByLabelText(/^ResNet input/), new File(['image'], 'cat.png', { type: 'image/png' }))
     await userEvent.click(screen.getByRole('button', { name: 'Review funding' }))
@@ -43,7 +45,7 @@ describe('SubmitJob', () => {
 
   it('rejects an oversized input before upload or wallet signing', async () => {
     const deps = dependencies()
-    render(<SubmitJob models={[{ ...model, max_input_size_mb: 0.000001 }]} backend={deps.backend} chain={deps.chain} authenticatedWallet={account} />)
+    render(<MemoryRouter><SubmitJob models={[{ ...model, max_input_size_mb: 0.000001 }]} backend={deps.backend} chain={deps.chain} authenticatedWallet={account} /></MemoryRouter>)
     await userEvent.upload(screen.getByLabelText(/^ResNet input/), new File(['too large'], 'cat.png', { type: 'image/png' }))
     await userEvent.click(screen.getByRole('button', { name: 'Review funding' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('too large')
@@ -53,12 +55,49 @@ describe('SubmitJob', () => {
 
   it('reads a wallet authenticated after the page was already rendered', async () => {
     const deps = dependencies()
-    render(<SubmitJob models={[model]} backend={deps.backend} chain={deps.chain} />)
+    render(<MemoryRouter><SubmitJob models={[model]} backend={deps.backend} chain={deps.chain} /></MemoryRouter>)
     setAuthenticatedWallet(account)
     await userEvent.upload(screen.getByLabelText(/^ResNet input/), new File(['image'], 'cat.png', { type: 'image/png' }))
 
     await userEvent.click(screen.getByRole('button', { name: 'Review funding' }))
 
     expect(await screen.findByLabelText('Signing summary')).toHaveTextContent(account)
+  })
+
+  it('submits bounded BERT text as an exact UTF-8 input file', async () => {
+    const deps = dependencies()
+    render(<MemoryRouter><SubmitJob models={[model, bertModel]} backend={deps.backend} chain={deps.chain} authenticatedWallet={account} /></MemoryRouter>)
+
+    await userEvent.selectOptions(screen.getByLabelText('Approved model'), 'bert-base')
+    await userEvent.type(screen.getByLabelText('Text to analyse'), 'This project works beautifully.')
+    await userEvent.click(screen.getByRole('button', { name: 'Review funding' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm upload and sign' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('ready for assignment')
+    const request = vi.mocked(deps.backend.createJob).mock.calls[0][0]
+    expect(request.modelId).toBe('bert-base')
+    expect(request.input.name).toBe('input.txt')
+    expect(request.input.type).toBe('text/plain')
+    const text = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.addEventListener('load', () => resolve(String(reader.result)))
+      reader.addEventListener('error', () => reject(reader.error))
+      reader.readAsText(request.input)
+    })
+    expect(text).toBe('This project works beautifully.')
+    expect(screen.getByRole('link', { name: 'Follow job progress' })).toHaveAttribute(
+      'href',
+      '/user/jobs/123e4567-e89b-12d3-a456-426614174000',
+    )
+  })
+
+  it('shows a recoverable inline error for empty BERT text', async () => {
+    const deps = dependencies()
+    render(<MemoryRouter><SubmitJob models={[bertModel]} backend={deps.backend} chain={deps.chain} authenticatedWallet={account} /></MemoryRouter>)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Review funding' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter text for BERT sentiment analysis')
+    expect(deps.chain.inspectFunding).not.toHaveBeenCalled()
   })
 })

@@ -37,13 +37,28 @@ async def _lock_next_queued_job(db: AsyncSession) -> uuid.UUID | None:
         "WHERE previous.job_id = jobs.id AND previous.expires_at >= :now "
         "AND assignment.tx_type = 'assignProvider' "
         "AND assignment.status IN ('confirmed','finalized')) "
+        # An unsupported/busy oldest job must not block later compatible work.
+        "AND EXISTS (SELECT 1 FROM nodes candidate "
+        "JOIN supported_models model ON model.id = jobs.model_id "
+        "WHERE candidate.status = 'online' AND candidate.cuda_capable = true "
+        "AND candidate.vram_gb >= COALESCE(model.vram_required_gb, 0) "
+        "AND candidate.last_heartbeat >= :cutoff "
+        "AND (jobs.model_id != 'bert-base' OR candidate.supports_bert = true) "
+        "AND NOT EXISTS (SELECT 1 FROM leases busy WHERE busy.node_id = candidate.id "
+        "AND busy.status IN ('active','pending_chain'))) "
         "ORDER BY created_at ASC LIMIT 1"
     )
     if dialect == "postgresql":
         query += " FOR UPDATE SKIP LOCKED"
     result = await db.execute(
-        text(query).bindparams(bindparam("now", type_=DateTime(timezone=True))),
-        {"now": datetime.now(timezone.utc)},
+        text(query).bindparams(
+            bindparam("now", type_=DateTime(timezone=True)),
+            bindparam("cutoff", type_=DateTime(timezone=True)),
+        ),
+        {
+            "now": datetime.now(timezone.utc),
+            "cutoff": datetime.now(timezone.utc) - timedelta(seconds=settings.NODE_HEARTBEAT_TTL_SECONDS),
+        },
     )
 
     row = result.first()
@@ -92,14 +107,38 @@ async def schedule_next_job(
         select(Node)
         .where(
             Node.status == "online",
+            Node.cuda_capable.is_(True),
+            Node.supports_bert.is_(True) if job.model_id == "bert-base" else Node.cuda_capable.is_(True),
             Node.vram_gb >= required_vram,
             Node.last_heartbeat >= datetime.now(timezone.utc) - timedelta(seconds=settings.NODE_HEARTBEAT_TTL_SECONDS),
+            ~select(Lease.id)
+            .where(
+                Lease.node_id == Node.id,
+                Lease.status.in_(["active", "pending_chain"]),
+            )
+            .exists(),
         )
         .order_by(Node.active_leases.asc(), Node.last_heartbeat.desc())
         .limit(1)
+        .with_for_update(skip_locked=True)
     )
     node = node_result.scalar_one_or_none()
     if not node:
+        return None
+
+    # PostgreSQL takes the SELECT snapshot before acquiring the row lock. A
+    # different scheduler may have committed a lease just before we got the
+    # unchanged node row; recheck in a fresh READ COMMITTED statement while
+    # holding that node lock, which every scheduler must acquire.
+    busy = await db.execute(
+        select(Lease.id)
+        .where(
+            Lease.node_id == node.id,
+            Lease.status.in_(["active", "pending_chain"]),
+        )
+        .limit(1)
+    )
+    if busy.first() is not None:
         return None
 
     # Create lease in pending_chain status

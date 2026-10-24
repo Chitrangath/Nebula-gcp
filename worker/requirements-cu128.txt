@@ -1,0 +1,5 @@
+# RTX 50-series/Blackwell runtime. Install in the provider's own virtualenv.
+--extra-index-url https://download.pytorch.org/whl/cu128
+-r requirements-common.txt
+torch==2.7.1+cu128
+torchvision==0.22.1+cu128

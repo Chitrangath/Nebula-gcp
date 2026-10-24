@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import warnings
 from collections.abc import Callable
 from typing import Final
@@ -34,6 +35,7 @@ class ModelExecutionError(RuntimeError):
 
 def configure_determinism() -> None:
     """Configure the documented deterministic PyTorch execution envelope."""
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
     torch.manual_seed(0)
     torch.use_deterministic_algorithms(True)
     torch.backends.cudnn.benchmark = False

@@ -139,9 +139,17 @@ async def active_lease_and_job(db: AsyncSession, seed_model, seed_user, seed_nod
 
 class TestProofPipeline:
     @pytest.mark.asyncio
-    async def test_all_checks_pass(self, db: AsyncSession, active_lease_and_job):
+    @pytest.mark.parametrize("model_id,checkpoints", [
+        ("resnet50", ["preprocess", "forward", "softmax", "topk"]),
+        ("bert-base", ["tokenize", "forward", "pool", "project"]),
+    ])
+    async def test_all_checks_pass(self, db: AsyncSession, active_lease_and_job, model_id, checkpoints):
         """Valid proof passes all 12 checks."""
         job, lease, attempt, node, worker_key, worker_acct, storage, result_bytes = active_lease_and_job
+        if model_id == "bert-base":
+            db.add(SupportedModel(id=model_id, name="BERT sentiment", price_base_units=50000))
+            await db.flush()
+            job.model_id = model_id
 
         # Store canonical result bytes
         await storage.put_object(job.result_file_key, result_bytes)
@@ -186,14 +194,14 @@ class TestProofPipeline:
             output_hash_hex=output_hash.hex(),
             merkle_proof=proofs[0],
             trace_hashes=trace_hashes,
-            checkpoint_names=["preprocess", "forward", "softmax", "topk"],
+            checkpoint_names=checkpoints,
             signature_bytes=signature,
             signer_address=worker_acct.address,
             proof_timestamp=ts,
             protocol_version=1,
             chain_id=421614,
             contract_address="0x" + "ab" * 20,
-            model_id="resnet50",
+            model_id=model_id,
         )
 
         assert result.verdict == Verdict.VALID

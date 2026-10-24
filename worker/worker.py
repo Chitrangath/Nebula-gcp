@@ -2,6 +2,9 @@
 
 import asyncio
 import logging
+import os
+
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 from config import settings
 from core.executor import JobExecutor

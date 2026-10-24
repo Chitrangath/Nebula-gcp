@@ -31,8 +31,9 @@ MODEL_CONFIGS: dict[str, dict] = {
     },
     "bert-base": {
         "max_length": 512,
-        "tokenizer": "bert-base-uncased",
-        "preprocessing_version": "bert-v1",
+        "tokenizer": "nlptown/bert-base-multilingual-uncased-sentiment",
+        "tokenizer_sha256": "87b44292b452f6c05afa49b2e488e7eedf79ea4f4c39db6f2f4b37764228ef3f",
+        "preprocessing_version": "bert-sentiment-v1",
     },
     "whisper-tiny": {
         "sample_rate": 16000,

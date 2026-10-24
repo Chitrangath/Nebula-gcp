@@ -37,6 +37,27 @@ class AcceptedInput:
     height: int
 
 
+async def accept_text_upload(
+    upload: UploadFile, *, supported_formats: list[str], max_size_bytes: int,
+) -> AcceptedInput:
+    """Accept exact bounded UTF-8 text for BERT, rejecting binary/empty uploads."""
+    filename = upload.filename or ""
+    if not _SAFE_FILENAME.fullmatch(filename) or not filename.lower().endswith(".txt"):
+        raise InputUploadError("use a safe .txt filename")
+    if "txt" not in supported_formats or upload.content_type != "text/plain":
+        raise InputUploadError("BERT requires a text/plain .txt upload")
+    data = await upload.read(min(max_size_bytes, 65536) + 1)
+    if len(data) > min(max_size_bytes, 65536):
+        raise InputTooLargeError("text input exceeds the 64 KiB limit")
+    try:
+        text = data.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise InputUploadError("text must be valid UTF-8") from exc
+    if not text.strip() or "\0" in text:
+        raise InputUploadError("text must be nonempty and contain no NUL bytes")
+    return AcceptedInput(data, "txt", "text/plain", 0, 0)
+
+
 async def accept_image_upload(
     upload: UploadFile,
     *,

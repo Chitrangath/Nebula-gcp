@@ -206,7 +206,142 @@ class TestLeaseService:
         assert updated_lease.status == "expired"
 
 
+@pytest.mark.asyncio
+async def test_two_providers_receive_exclusive_jobs_without_overbooking(
+    db,
+    seed_queued_job,
+    seed_node,
+    seed_model,
+    seed_user,
+):
+    """A pending on-chain assignment already reserves its GPU node."""
+    other_provider = User(wallet_address="0x" + "77" * 20, role="provider")
+    db.add(other_provider)
+    await db.flush()
+    other_node = Node(
+        provider_id=other_provider.id,
+        gpu_name="RTX 5050",
+        vram_gb=8,
+        status="online",
+        api_key_hash="ab" * 32,
+        active_leases=0,
+        last_heartbeat=datetime.now(timezone.utc) - timedelta(seconds=1),
+    )
+    db.add(other_node)
+    for _ in range(2):
+        job = await create_job(
+            db,
+            user_id=seed_user.id,
+            model_id=seed_model.id,
+            chain_job_id="0x" + uuid.uuid4().hex,
+            price_base_units=int(seed_model.price_base_units),
+            deadline=datetime.now(timezone.utc) + timedelta(hours=1),
+        )
+        await confirm_job_escrow(
+            db, job_id=job.id, tx_hash="0x" + uuid.uuid4().hex, escrow_amount=int(seed_model.price_base_units)
+        )
+    await db.flush()
+    first = await schedule_next_job(db)
+    second = await schedule_next_job(db)
+    assert first is not None and second is not None
+    assert {first[1].id, second[1].id} == {seed_node.id, other_node.id}
+    assert first[0].id != second[0].id
+    assert await schedule_next_job(db) is None
+
+
 class TestScheduler:
+    @pytest.mark.asyncio
+    async def test_unavailable_bert_job_does_not_block_resnet(
+        self, db, seed_queued_job, seed_node, seed_model, seed_user
+    ):
+        bert = SupportedModel(id="bert-base", name="BERT", price_base_units=50000, vram_required_gb=4)
+        db.add(bert)
+        await db.flush()
+        seed_queued_job.model_id = bert.id
+        resnet_job = await create_job(
+            db,
+            user_id=seed_user.id,
+            model_id=seed_model.id,
+            chain_job_id="0x" + uuid.uuid4().hex,
+            price_base_units=int(seed_model.price_base_units),
+            deadline=datetime.now(timezone.utc) + timedelta(hours=1),
+        )
+        await confirm_job_escrow(
+            db, job_id=resnet_job.id, tx_hash="0x" + uuid.uuid4().hex, escrow_amount=int(seed_model.price_base_units)
+        )
+        assignment = await schedule_next_job(db)
+        assert assignment is not None
+        assert assignment[0].id == resnet_job.id
+
+    @pytest.mark.asyncio
+    async def test_bert_is_only_assigned_after_worker_advertises_support(
+        self, db, seed_queued_job, seed_node, seed_model
+    ):
+        from httpx import ASGITransport, AsyncClient
+
+        from app.main import app
+
+        bert = SupportedModel(
+            id="bert-base", name="BERT sentiment", vram_required_gb=4, price_base_units=50000, input_type="text"
+        )
+        db.add(bert)
+        await db.flush()
+        seed_queued_job.model_id = bert.id
+        await db.flush()
+        assert await schedule_next_job(db) is None
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            heartbeat = await client.post(
+                f"/v1/worker/nodes/{seed_node.id}/heartbeat",
+                headers={"X-API-Key": "test-key"},
+                json={"supported_models": ["resnet50", "bert-base"]},
+            )
+        assert heartbeat.status_code == 200
+        assignment = await schedule_next_job(db)
+        assert assignment is not None
+        assert assignment[1].id == seed_node.id
+
+    @pytest.mark.asyncio
+    async def test_only_assigned_worker_receives_private_model_url(self, db, seed_queued_job, seed_node, seed_model):
+        from httpx import ASGITransport, AsyncClient
+
+        from app.main import app
+        from app.services.lease_service import activate_lease
+
+        seed_model.model_source_url = "models/approved.safetensors"
+        _, _, lease = await schedule_next_job(db)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            path = f"/v1/worker/leases/{lease.id}/model-url"
+            assert (await client.get(path, headers={"X-API-Key": "test-key"})).status_code == 409
+            await activate_lease(db, lease.id)
+            assert (await client.get(path, headers={"X-API-Key": "wrong"})).status_code == 401
+            response = await client.get(path, headers={"X-API-Key": "test-key"})
+            lease.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+            await db.flush()
+            expired = await client.get(path, headers={"X-API-Key": "test-key"})
+        assert response.status_code == 200
+        assert "models/approved.safetensors" in response.json()["url"]
+        assert expired.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_user_can_see_assigned_provider_without_node_credentials(self, db, seed_queued_job, seed_node):
+        from httpx import ASGITransport, AsyncClient
+
+        from app.main import app
+        from tests.conftest import seed_authed_user
+
+        owner_id, token = await seed_authed_user(db)
+        seed_queued_job.user_id = owner_id
+        await schedule_next_job(db)
+        await db.commit()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.get(f"/v1/jobs/{seed_queued_job.id}", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["assigned_node_id"] == str(seed_node.id)
+        assert payload["assigned_gpu_name"] == "RTX 4090"
+        assert payload["assigned_provider_address"].startswith("0x")
+        assert "api_key" not in response.text
+
     @pytest.mark.asyncio
     async def test_schedule_next_job(self, db: AsyncSession, seed_queued_job, seed_node):
         result = await schedule_next_job(db)

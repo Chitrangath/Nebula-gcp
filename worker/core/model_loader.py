@@ -12,6 +12,7 @@ import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from importlib.metadata import version
 from pathlib import Path
 from typing import Final
 
@@ -28,6 +29,29 @@ RESNET50_DEPENDENCIES: Final = (
     "Pillow==11.1.0",
     "numpy==2.1.3",
 )
+BERT_DEPENDENCIES: Final = (
+    "torch==2.5.1",
+    "transformers==4.48.3",
+    "safetensors==0.5.3",
+)
+
+
+def approved_runtime_dependencies(model_id: str) -> tuple[str, ...]:
+    """Validate the installed runtime against the two explicit GPU profiles."""
+    torch_version = version("torch").split("+", 1)[0]
+    vision_version = version("torchvision").split("+", 1)[0]
+    if (torch_version, vision_version) not in {
+        ("2.5.1", "0.20.1"),
+        ("2.7.1", "0.22.1"),
+    }:
+        raise ValueError("install one of the pinned worker runtime profiles")
+    baseline = BERT_DEPENDENCIES if model_id == "bert-base" else RESNET50_DEPENDENCIES
+    return tuple(
+        item.replace("torch==2.5.1", f"torch=={torch_version}").replace(
+            "torchvision==0.20.1", f"torchvision=={vision_version}"
+        )
+        for item in baseline
+    )
 
 
 class ModelArtifactError(RuntimeError):
@@ -54,10 +78,20 @@ class ModelSpec:
     dependency_versions: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        if (
-            self.model_id != "resnet50"
-            or self.architecture != "torchvision.models.resnet50"
-        ):
+        registry = {
+            "resnet50": (
+                "torchvision.models.resnet50",
+                ("preprocess", "forward", "softmax", "topk"),
+                RESNET50_DEPENDENCIES,
+            ),
+            "bert-base": (
+                "transformers.BertForSequenceClassification",
+                ("tokenize", "forward", "pool", "project"),
+                BERT_DEPENDENCIES,
+            ),
+        }
+        approved = registry.get(self.model_id)
+        if approved is None or self.architecture != approved[0]:
             raise ValueError("model is not in the code-defined ResNet50 registry")
         if not SHA256_PATTERN.fullmatch(self.sha256):
             raise ValueError(
@@ -68,11 +102,17 @@ class ModelSpec:
             or self.serialization_version != "safetensors-v1"
         ):
             raise ValueError("only safetensors state dictionaries are accepted")
-        if self.checkpoints != ("preprocess", "forward", "softmax", "topk"):
+        if self.checkpoints != approved[1]:
             raise ValueError(
                 "model checkpoint contract does not match the approved protocol"
             )
-        if self.dependency_versions != RESNET50_DEPENDENCIES:
+        modern_dependencies = tuple(
+            item.replace("torch==2.5.1", "torch==2.7.1").replace(
+                "torchvision==0.20.1", "torchvision==0.22.1"
+            )
+            for item in approved[2]
+        )
+        if self.dependency_versions not in (approved[2], modern_dependencies):
             raise ValueError(
                 "model dependency versions do not match the approved registry"
             )

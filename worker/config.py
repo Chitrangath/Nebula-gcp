@@ -22,9 +22,11 @@ class Settings(BaseSettings):
     POLL_INTERVAL_SECONDS: float = 2.0
     CHAIN_ID: int = 421614
     VERIFYING_CONTRACT: str
-    EXECUTOR_ADAPTER: Literal["fixture", "resnet50"] = "fixture"
+    EXECUTOR_ADAPTER: Literal["fixture", "resnet50", "multimodel"] = "fixture"
+    BERT_VOCAB_PATH: str | None = None
+    MODEL_DOWNLOAD_TIMEOUT_SECONDS: float = 900
     EXECUTOR_DEVICE: Literal["cpu", "cuda"] = "cpu"
-    MAX_MODEL_ARTIFACT_BYTES: int = 256 * 1024 * 1024
+    MAX_MODEL_ARTIFACT_BYTES: int = 768 * 1024 * 1024
 
     class Config:
         env_file = ".env"

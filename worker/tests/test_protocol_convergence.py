@@ -10,16 +10,18 @@ from proof.envelope import ProofEnvelope as WorkerEnvelope
 from proof.envelope import typed_data
 from proof.fingerprint import compute_fingerprint as worker_fingerprint
 from proof.merkle import build_merkle_root
+import pytest
 
 
-def test_fingerprint_convergence() -> None:
+@pytest.mark.parametrize("model_id,preprocessing_version", [("resnet50", "resnet50-v1"), ("bert-base", "bert-sentiment-v1")])
+def test_fingerprint_convergence(model_id, preprocessing_version) -> None:
     values = {
         "job_id": "12345678-1234-5678-1234-567812345678",
-        "model_id": "resnet50",
+        "model_id": model_id,
         "model_version": "1.0.0",
         "model_hash": "ab" * 32,
         "input_hash": "cd" * 32,
-        "preprocessing_version": "resnet50-v1",
+        "preprocessing_version": preprocessing_version,
     }
     assert worker_fingerprint(**values) == backend_fingerprint(**values)
 

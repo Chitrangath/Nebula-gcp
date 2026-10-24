@@ -31,7 +31,7 @@ import binascii
 import hashlib
 import uuid
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -530,6 +530,35 @@ async def worker_lease_model(
     return Response(data, media_type="application/octet-stream")
 
 
+@router.get("/leases/{lease_id}/model-url")
+async def worker_model_download_url(
+    lease_id: str,
+    node: Node = Depends(_authenticate_worker),
+    db: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage),
+):
+    """Issue a short private-object capability without buffering weights in the API."""
+    lease = await _get_lease_and_verify_node(lease_id, node, db)
+    job = await db.get(Job, lease.job_id)
+    if lease.status != "active" or job.current_lease_id != lease.id:
+        raise HTTPException(status_code=409, detail="Lease is not active and current")
+    now = datetime.now(timezone.utc)
+    remaining = int((min(
+        lease.expires_at.replace(tzinfo=timezone.utc) if lease.expires_at.tzinfo is None else lease.expires_at,
+        job.deadline.replace(tzinfo=timezone.utc) if job.deadline.tzinfo is None else job.deadline,
+    ) - now).total_seconds())
+    if remaining <= 0:
+        raise HTTPException(status_code=409, detail="Lease or job deadline has expired")
+    model = await db.get(SupportedModel, job.model_id)
+    if not model or not model.model_source_url:
+        raise HTTPException(status_code=404, detail="Model artifact is not configured")
+    try:
+        url = await storage.generate_download_url(model.model_source_url, expires_in=min(900, remaining))
+    except (StorageUnavailableError, NotImplementedError) as exc:
+        raise HTTPException(status_code=503, detail="Private model download unavailable") from exc
+    return {"url": url}
+
+
 @router.post("/leases/{lease_id}/fail", response_model=FailResponse)
 async def worker_lease_fail(
     lease_id: str,
@@ -553,9 +582,16 @@ async def worker_lease_fail(
     return FailResponse(lease_id=str(lease.id), status="failed")
 
 
+class NodeCapabilities(BaseModel):
+    """The authenticated worker's code-supported model set."""
+
+    supported_models: list[Literal["resnet50", "bert-base"]] = Field(max_length=2)
+
+
 @router.post("/nodes/{node_id}/heartbeat", response_model=HeartbeatResponse)
 async def worker_node_heartbeat(
     node_id: str,
+    capabilities: NodeCapabilities | None = None,
     node: Node = Depends(_authenticate_worker),
     db: AsyncSession = Depends(get_db),
 ):
@@ -570,5 +606,7 @@ async def worker_node_heartbeat(
 
     if node.status == "pending":
         node.status = "online"
+    if capabilities is not None:
+        node.supports_bert = "bert-base" in capabilities.supported_models
     await update_heartbeat(db, node)
     return HeartbeatResponse(detail="Heartbeat recorded")

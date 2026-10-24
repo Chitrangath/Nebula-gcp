@@ -51,6 +51,20 @@ class RegisterNodeResponse(BaseModel):
     status: str
 
 
+class NodeLeaseResponse(BaseModel):
+    job_id: str
+    model_id: str
+    status: str
+    expires_at: datetime
+
+
+class NodeJobResponse(BaseModel):
+    job_id: str
+    model_id: str
+    status: str
+    completed_at: datetime | None
+
+
 class NodeResponse(BaseModel):
     id: str
     gpu_name: str | None
@@ -59,6 +73,9 @@ class NodeResponse(BaseModel):
     last_heartbeat: datetime | None
     active_leases: int
     worker_signer_address: str | None
+    supported_models: list[str]
+    active_lease: NodeLeaseResponse | None
+    recent_jobs: list[NodeJobResponse]
 
 
 class RotateNodeCredentialResponse(BaseModel):

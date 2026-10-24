@@ -1,13 +1,14 @@
 """BE-003 provider node ownership and credential lifecycle tests."""
 
 import hashlib
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from app.main import app
-from app.models import User
+from app.models import Job, Lease, SupportedModel, User
 from app.services.node_service import register_node
 from tests.conftest import seed_authed_user
 
@@ -47,6 +48,66 @@ async def test_node_listing_is_authenticated_and_provider_scoped(db):
     assert [node["id"] for node in response.json()] == [str(owned.id)]
     assert "api_key" not in response.text
     assert "api_key_hash" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_node_listing_includes_capabilities_active_lease_and_recent_completed_work(db):
+    provider_id, token = await seed_authed_user(db)
+    provider = (await db.execute(select(User).where(User.id == provider_id))).scalar_one()
+    provider.role = "provider"
+    customer = User(wallet_address="0x" + "98" * 20, role="user")
+    model = SupportedModel(id="bert-base", name="BERT sentiment", price_base_units=50_000)
+    db.add_all([customer, model])
+    await db.flush()
+    node, _ = await register_node(db, provider.id, "RTX 3050", 4, "IN", None)
+    node.status = "online"
+    node.supports_bert = True
+    active_job = Job(
+        user_id=customer.id,
+        model_id=model.id,
+        chain_job_id="0x" + "11" * 32,
+        assigned_node_id=node.id,
+        status="assigned",
+        price_base_units=50_000,
+        deadline=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    completed_job = Job(
+        user_id=customer.id,
+        model_id=model.id,
+        chain_job_id="0x" + "22" * 32,
+        assigned_node_id=node.id,
+        status="completed",
+        price_base_units=50_000,
+        deadline=datetime.now(timezone.utc) + timedelta(hours=1),
+        completed_at=datetime.now(timezone.utc),
+    )
+    db.add_all([active_job, completed_job])
+    await db.flush()
+    lease = Lease(
+        job_id=active_job.id,
+        node_id=node.id,
+        lease_id="0x" + "33" * 32,
+        status="active",
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+    )
+    db.add(lease)
+    await db.flush()
+    active_job.current_lease_id = lease.id
+    await db.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/v1/nodes", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    item = response.json()[0]
+    assert item["supported_models"] == ["resnet50", "bert-base"]
+    assert item["active_lease"]["job_id"] == str(active_job.id)
+    assert item["active_lease"]["model_id"] == "bert-base"
+    assert item["recent_jobs"][0]["job_id"] == str(completed_job.id)
+    assert item["recent_jobs"][0]["model_id"] == "bert-base"
+    assert item["recent_jobs"][0]["status"] == "completed"
+    completed_at = datetime.fromisoformat(item["recent_jobs"][0]["completed_at"].replace("Z", "+00:00"))
+    assert completed_at == completed_job.completed_at
 
 
 @pytest.mark.asyncio

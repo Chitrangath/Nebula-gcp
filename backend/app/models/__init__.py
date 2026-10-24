@@ -65,6 +65,7 @@ class Node(Base):
     gpu_name = Column(String(100))
     vram_gb = Column(Integer)
     cuda_capable = Column(Boolean, default=True)
+    supports_bert = Column(Boolean, default=False, server_default="false", nullable=False)
     location = Column(String(100))
     status = Column(String(50), default="pending")
     worker_signer_address = Column(String(42))
