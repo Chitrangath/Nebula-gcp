@@ -1,9 +1,12 @@
+import { useEffect, useState } from 'react'
+import { listProviderNodes, type ProviderNode } from '../../api/nodes'
+
+const statusClass: Record<string, string> = { online: 'bg-emerald-100 text-emerald-800', pending: 'bg-amber-100 text-amber-800', offline: 'bg-gray-100 text-gray-700', disabled: 'bg-red-100 text-red-800' }
+
 export default function ProviderDashboard() {
-  return (
-    <div>
-      <h1 className="text-2xl font-bold mb-6">Provider Dashboard</h1>
-      <p className="text-gray-600">Manage your GPU nodes and earnings.</p>
-      {/* TODO: Implement with node list, earnings, worker download */}
-    </div>
-  )
+  const [nodes, setNodes] = useState<ProviderNode[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => { const controller = new AbortController(); void listProviderNodes(controller.signal).then(setNodes).catch((caught) => { if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : 'Could not load provider nodes.') }).finally(() => { if (!controller.signal.aborted) setLoading(false) }); return () => controller.abort() }, [])
+  return <main className="mx-auto max-w-5xl"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="mb-2 text-sm font-semibold uppercase tracking-wide text-primary-700">Provider network</p><h1 className="text-3xl font-bold tracking-tight">Your GPU nodes</h1><p className="mt-2 text-gray-600">Monitor availability, active leases, and worker heartbeats.</p></div><a href="/provider/register" className="min-h-11 rounded-lg bg-primary-600 px-5 py-3 font-semibold text-white">Register a node</a></div>{loading ? <p role="status" className="mt-8">Loading nodes…</p> : null}{error ? <p role="alert" className="mt-8 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800">{error}</p> : null}{!loading && !error && nodes.length === 0 ? <div className="mt-8 rounded-xl border border-dashed p-8 text-center"><h2 className="font-semibold">No nodes registered</h2><p className="mt-2 text-gray-600">Register this device to join the provider network.</p></div> : <div className="mt-8 grid gap-4 md:grid-cols-2">{nodes.map((node) => <article key={node.id} className="rounded-xl border bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-semibold">{node.gpu_name ?? 'Unnamed GPU'}</h2><p className="mt-1 break-all font-mono text-xs text-gray-500">{node.id}</p></div><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusClass[node.status] ?? 'bg-gray-100 text-gray-700'}`}>{node.status}</span></div><dl className="mt-5 grid grid-cols-2 gap-4 text-sm"><div><dt className="text-gray-500">VRAM</dt><dd className="font-medium">{node.vram_gb ? `${node.vram_gb} GB` : '—'}</dd></div><div><dt className="text-gray-500">Active leases</dt><dd className="font-medium">{node.active_leases}</dd></div><div className="col-span-2"><dt className="text-gray-500">Last heartbeat</dt><dd className="font-medium">{node.last_heartbeat ? new Date(node.last_heartbeat).toLocaleString() : 'No heartbeat yet'}</dd></div></dl></article>)}</div>}</main>
 }
