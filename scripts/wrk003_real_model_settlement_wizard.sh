@@ -184,7 +184,7 @@ finish() {
 # WRK-003 owner-operated real-model/GPU settlement gate.
 
 TOTAL_STAGES=6
-ENV_FILE="${ENV_FILE:-$HOME/.config/nebula-gcp/wrk003.env}"
+ENV_FILE="$HOME/.config/nebula-gcp/wrk003.env"
 mkdir -p "$(dirname "$ENV_FILE")"
 
 banner "WRK-003 real-model settlement"
