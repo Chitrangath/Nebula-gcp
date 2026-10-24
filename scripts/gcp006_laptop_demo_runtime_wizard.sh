@@ -118,7 +118,7 @@ run_wizard() {
   contract_address=$(load_value NEBULA_PAYMENT_CONTRACT)
   require_https_origin CLOUD_RUN_ORIGIN "$api_origin"
   confirm_action "RUN-CONNECTIVITY" "Run reviewed health, Supabase, private R2, RPC, and deployed-contract connectivity checks?"
-  run_command "runtime connectivity preflight" "${NEBULA_WIZARD_REPO_ROOT}/backend/.venv/bin/python" "${NEBULA_WIZARD_REPO_ROOT}/scripts/gcp_laptop_runtime_preflight.py" --config-dir "$NEBULA_GCP_CONFIG_DIR"
+  run_command "runtime connectivity preflight" timeout 75s "${NEBULA_WIZARD_REPO_ROOT}/backend/.venv/bin/python" "${NEBULA_WIZARD_REPO_ROOT}/scripts/gcp_laptop_runtime_preflight.py" --config-dir "$NEBULA_GCP_CONFIG_DIR"
 
   stage 3 7 "Validate separate worker, GPU provider, and Verifier identities"
   open_url "https://docs.arbitrum.io/build-decentralized-apps/reference/node-providers"
