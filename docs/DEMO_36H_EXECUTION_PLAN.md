@@ -88,6 +88,8 @@ The contract, backend, R2, and Arbitrum Sepolia deployment already exist. No con
 
 ### DEMO-008 — Three-device acceptance and demo runbook (6h)
 
+**Implementation status:** acceptance tooling and fresh-operator runbook complete and locally verified. Final closure requires owner-led execution with the independent Device C, two funded browser jobs on distinct nodes, and sanitized live evidence.
+
 - Run one ResNet50 job through Device A → scheduler → Device B or C → proof → settlement.
 - Run one BERT job and demonstrate assignment to the other provider.
 - Stop/restart one provider and verify reassignment or an explicit retry/failure state.
