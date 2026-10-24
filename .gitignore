@@ -62,3 +62,5 @@ service-account.json
 deploy/oci/backend.env
 .vercel
 .env*
+!.env.example
+!**/.env.example
