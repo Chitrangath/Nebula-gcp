@@ -36,7 +36,7 @@ check_local() {
   for optional in docker node npm curl; do
     command -v "$optional" >/dev/null 2>&1 && printf '  OK  %s\n' "$optional" || printf '  WARN %s is needed for the full demonstration\n' "$optional"
   done
-  git --git-dir="${NEBULA_WIZARD_REPO_ROOT}/.git-local" --work-tree="$NEBULA_WIZARD_REPO_ROOT" diff --quiet \
+  git -C "$NEBULA_WIZARD_REPO_ROOT" diff --quiet \
     && printf '  OK  tracked worktree is clean\n' \
     || printf '  WARN tracked worktree is dirty; --run will refuse until changes are reviewed and committed\n'
   (( failed == 0 ))
@@ -105,7 +105,7 @@ run_wizard() {
   stage 1 7 "Validate local Docker/Python/Node prerequisites and clean configuration"
   open_url "https://docs.docker.com/engine/install/"
   check_local
-  git --git-dir="${NEBULA_WIZARD_REPO_ROOT}/.git-local" --work-tree="$NEBULA_WIZARD_REPO_ROOT" diff --quiet || {
+  git -C "$NEBULA_WIZARD_REPO_ROOT" diff --quiet || {
     printf 'Refusing runtime preparation from a dirty tracked worktree.\n' >&2; return 1;
   }
 
