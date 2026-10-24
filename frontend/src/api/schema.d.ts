@@ -252,6 +252,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/network": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Network Snapshot
+         * @description Return public identities and backend-observed state for demo participants.
+         */
+        get: operations["get_network_snapshot_v1_network_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/nodes": {
         parameters: {
             query?: never;
@@ -773,6 +793,81 @@ export interface components {
             lease?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** NetworkCompletedJobResponse */
+        NetworkCompletedJobResponse: {
+            /** Chain Job Id */
+            chain_job_id: string;
+            /** Completed At */
+            completed_at: string | null;
+            /** Model Id */
+            model_id: string;
+        };
+        /** NetworkLeaseResponse */
+        NetworkLeaseResponse: {
+            /** Chain Job Id */
+            chain_job_id: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Model Id */
+            model_id: string;
+            /** Status */
+            status: string;
+        };
+        /** NetworkNodeResponse */
+        NetworkNodeResponse: {
+            active_lease: components["schemas"]["NetworkLeaseResponse"] | null;
+            /** Gpu Name */
+            gpu_name: string | null;
+            /** Heartbeat Age Seconds */
+            heartbeat_age_seconds: number | null;
+            /** Id */
+            id: string;
+            last_completed_job: components["schemas"]["NetworkCompletedJobResponse"] | null;
+            /** Last Heartbeat */
+            last_heartbeat: string | null;
+            /** Provider Wallet Address */
+            provider_wallet_address: string;
+            /** Roles */
+            roles: ("gpu_provider" | "verifier")[];
+            /** Status */
+            status: string;
+            /** Supported Models */
+            supported_models: string[];
+            /** Vram Gb */
+            vram_gb: number | null;
+        };
+        /** NetworkSnapshotResponse */
+        NetworkSnapshotResponse: {
+            /** Chain Id */
+            chain_id: number;
+            /** Heartbeat Ttl Seconds */
+            heartbeat_ttl_seconds: number;
+            /** Nodes */
+            nodes: components["schemas"]["NetworkNodeResponse"][];
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Verifier Address */
+            verifier_address: string | null;
+            viewer: components["schemas"]["NetworkViewerResponse"];
+        };
+        /** NetworkViewerResponse */
+        NetworkViewerResponse: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "ai_user" | "gpu_provider";
+            /** User Id */
+            user_id: string;
+            /** Wallet Address */
+            wallet_address: string;
         };
         /**
          * NodeCapabilities
@@ -2145,6 +2240,89 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Problem response */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Problem response */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Problem response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Problem response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Problem response */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Problem response */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Problem response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    get_network_snapshot_v1_network_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkSnapshotResponse"];
                 };
             };
             /** @description Problem response */

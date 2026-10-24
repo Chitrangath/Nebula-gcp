@@ -12,7 +12,7 @@ from slowapi.util import get_remote_address
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import settings
-from app.routers import auth, earnings, health, jobs, models, nodes, worker
+from app.routers import auth, earnings, health, jobs, models, network, nodes, worker
 from app.schemas import ProblemResponse
 from app.services.blockchain_service import Web3Backend
 from app.services.storage import build_storage, storage_config_from_settings
@@ -126,6 +126,7 @@ def create_app(*, blockchain=None, storage=None) -> FastAPI:
     application.include_router(models.router, prefix="/v1/models", tags=["Models"])
     application.include_router(jobs.router, prefix="/v1/jobs", tags=["Jobs"])
     application.include_router(earnings.router, prefix="/v1/earnings", tags=["Earnings"])
+    application.include_router(network.router, prefix="/v1/network", tags=["Network"])
     application.include_router(worker.router, prefix="/v1/worker", tags=["Worker"])
 
     @application.exception_handler(RateLimitExceeded)

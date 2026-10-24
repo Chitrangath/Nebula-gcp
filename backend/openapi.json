@@ -768,6 +768,255 @@
         "title": "LeaseNextResponse",
         "type": "object"
       },
+      "NetworkCompletedJobResponse": {
+        "properties": {
+          "chain_job_id": {
+            "title": "Chain Job Id",
+            "type": "string"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain_job_id",
+          "model_id",
+          "completed_at"
+        ],
+        "title": "NetworkCompletedJobResponse",
+        "type": "object"
+      },
+      "NetworkLeaseResponse": {
+        "properties": {
+          "chain_job_id": {
+            "title": "Chain Job Id",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain_job_id",
+          "model_id",
+          "status",
+          "expires_at"
+        ],
+        "title": "NetworkLeaseResponse",
+        "type": "object"
+      },
+      "NetworkNodeResponse": {
+        "properties": {
+          "active_lease": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NetworkLeaseResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gpu_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Name"
+          },
+          "heartbeat_age_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heartbeat Age Seconds"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_completed_job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NetworkCompletedJobResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_heartbeat": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Heartbeat"
+          },
+          "provider_wallet_address": {
+            "title": "Provider Wallet Address",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "enum": [
+                "gpu_provider",
+                "verifier"
+              ],
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "supported_models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Models",
+            "type": "array"
+          },
+          "vram_gb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vram Gb"
+          }
+        },
+        "required": [
+          "id",
+          "gpu_name",
+          "vram_gb",
+          "provider_wallet_address",
+          "roles",
+          "status",
+          "last_heartbeat",
+          "heartbeat_age_seconds",
+          "supported_models",
+          "active_lease",
+          "last_completed_job"
+        ],
+        "title": "NetworkNodeResponse",
+        "type": "object"
+      },
+      "NetworkSnapshotResponse": {
+        "properties": {
+          "chain_id": {
+            "title": "Chain Id",
+            "type": "integer"
+          },
+          "heartbeat_ttl_seconds": {
+            "title": "Heartbeat Ttl Seconds",
+            "type": "integer"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/NetworkNodeResponse"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "verifier_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verifier Address"
+          },
+          "viewer": {
+            "$ref": "#/components/schemas/NetworkViewerResponse"
+          }
+        },
+        "required": [
+          "observed_at",
+          "chain_id",
+          "heartbeat_ttl_seconds",
+          "verifier_address",
+          "viewer",
+          "nodes"
+        ],
+        "title": "NetworkSnapshotResponse",
+        "type": "object"
+      },
+      "NetworkViewerResponse": {
+        "properties": {
+          "role": {
+            "enum": [
+              "ai_user",
+              "gpu_provider"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          },
+          "wallet_address": {
+            "title": "Wallet Address",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "wallet_address",
+          "role"
+        ],
+        "title": "NetworkViewerResponse",
+        "type": "object"
+      },
       "NodeCapabilities": {
         "description": "The authenticated worker's code-supported model set.",
         "properties": {
@@ -2735,6 +2984,103 @@
         "summary": "Get Model",
         "tags": [
           "Models"
+        ]
+      }
+    },
+    "/v1/network": {
+      "get": {
+        "description": "Return public identities and backend-observed state for demo participants.",
+        "operationId": "get_network_snapshot_v1_network_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkSnapshotResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Problem response"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Problem response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Problem response"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Problem response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Problem response"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Problem response"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Problem response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Network Snapshot",
+        "tags": [
+          "Network"
         ]
       }
     },

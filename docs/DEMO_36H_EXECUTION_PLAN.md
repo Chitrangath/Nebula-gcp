@@ -78,6 +78,8 @@ The contract, backend, R2, and Arbitrum Sepolia deployment already exist. No con
 
 ### DEMO-007 — Connected-device network view (3h)
 
+**Implementation status:** complete and browser-contract verified. Production deployment and the live Device A/B/C state-change demonstration remain part of DEMO-008.
+
 - Add a network page/card showing registered nodes, wallet address, model capability, heartbeat age, status, current lease, and last completed job.
 - Display provider/verifier roles without revealing private credentials.
 - Add a short explanation of what is on-chain versus backend-observed.

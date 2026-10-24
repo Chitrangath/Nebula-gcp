@@ -20,6 +20,10 @@ _Avoid_: Miner, host
 A provider-operated machine registered to receive compatible job leases.
 _Avoid_: Provider, worker
 
+**Demo device**:
+A physical computer participating in the demonstration as an AI-user browser, a GPU node host, or both; one demo device may also host the Verifier process.
+_Avoid_: GPU node, wallet, blockchain peer
+
 **Worker**:
 The Nebula software process running on a GPU node that executes the model adapter and produces PoAE evidence.
 _Avoid_: Node, provider

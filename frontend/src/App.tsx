@@ -6,6 +6,7 @@ import RegisterNode from './pages/provider/RegisterNode'
 import UserDashboard from './pages/user/Dashboard'
 import SubmitJob from './pages/user/SubmitJob'
 import JobDetail from './pages/user/JobDetail'
+import Network from './pages/Network'
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
           <Route path="user/dashboard" element={<UserDashboard />} />
           <Route path="user/submit" element={<SubmitJob />} />
           <Route path="user/jobs/:id" element={<JobDetail />} />
+          <Route path="network" element={<Network />} />
         </Route>
       </Routes>
     </BrowserRouter>
