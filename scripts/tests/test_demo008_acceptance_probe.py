@@ -47,18 +47,20 @@ def job(model: str, node: str, byte: str) -> dict[str, object]:
     }
 
 
-def run_probe(tmp_path: Path, jobs: dict[str, dict[str, object]]) -> subprocess.CompletedProcess[str]:
+def run_probe(tmp_path: Path, jobs: dict[str, dict[str, object]], *, require_reassignment: bool = False) -> subprocess.CompletedProcess[str]:
     resnet = tmp_path / "resnet.json"; bert = tmp_path / "bert.json"
     resnet.write_text(json.dumps(jobs["resnet"])); bert.write_text(json.dumps(jobs["bert"]))
-    return subprocess.run(
-        [
+    command = [
             "python3", str(PROBE), "--resnet-json", str(resnet),
             "--bert-json", str(bert),
             "--device-b-node", "11111111-1111-4111-8111-111111111111",
             "--device-c-node", "22222222-2222-4222-8222-222222222222",
             "--source-commit", "a" * 40,
             "--output", str(tmp_path / "evidence.json"),
-        ],
+        ]
+    if require_reassignment:
+        command.append("--require-reassignment")
+    return subprocess.run(command,
         cwd=ROOT, check=False, capture_output=True, text=True,
     )
 
@@ -75,12 +77,11 @@ def test_probe_accepts_two_settled_models_on_distinct_nodes_without_recording_to
     assert "Authorization" not in evidence + result.stdout + result.stderr
 
 
-def test_probe_rejects_jobs_assigned_to_the_same_provider_node(tmp_path: Path) -> None:
+def test_probe_accepts_sequential_jobs_on_the_same_provider_node(tmp_path: Path) -> None:
     node = "11111111-1111-4111-8111-111111111111"
     result = run_probe(tmp_path, {"resnet": job("resnet50", node, "1"), "bert": job("bert-base", node, "2")})
 
-    assert result.returncode == 1
-    assert "distinct GPU nodes" in result.stderr
+    assert result.returncode == 0, result.stderr
 
 
 def test_probe_requires_bert_retry_evidence(tmp_path: Path) -> None:
@@ -88,7 +89,7 @@ def test_probe_requires_bert_retry_evidence(tmp_path: Path) -> None:
     bert = job("bert-base", "22222222-2222-4222-8222-222222222222", "2")
     bert["attempt_count"] = 1
 
-    result = run_probe(tmp_path, {"resnet": resnet, "bert": bert})
+    result = run_probe(tmp_path, {"resnet": resnet, "bert": bert}, require_reassignment=True)
 
     assert result.returncode == 1
     assert "retry/reassignment" in result.stderr

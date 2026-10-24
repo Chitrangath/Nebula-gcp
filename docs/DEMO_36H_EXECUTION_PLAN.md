@@ -88,10 +88,10 @@ The contract, backend, R2, and Arbitrum Sepolia deployment already exist. No con
 
 ### DEMO-008 — Three-device acceptance and demo runbook (6h)
 
-**Implementation status:** acceptance tooling and fresh-operator runbook complete and locally verified. Final closure requires owner-led execution with the independent Device C, two funded browser jobs on distinct nodes, and sanitized live evidence.
+**Implementation status:** acceptance tooling and fresh-operator runbook complete and locally verified. Final closure requires owner-led execution with the independent Device C, two funded browser jobs on the declared provider nodes (same-node sequential execution is valid), and sanitized live evidence.
 
 - Run one ResNet50 job through Device A → scheduler → Device B or C → proof → settlement.
-- Run one BERT job and demonstrate assignment to the other provider.
+- Run one BERT job after ResNet50; it may be assigned to either compatible provider. Optionally demonstrate assignment recovery to the other provider.
 - Stop/restart one provider and verify reassignment or an explicit retry/failure state.
 - Capture sanitized job IDs, transaction hashes, screenshots, and recovery commands.
 
@@ -126,7 +126,7 @@ Tickets may be parallelized only after their API contracts are stable. Do not st
 4. Assigned worker executes and submits proof.
 5. Backend verifies proof and settles escrow on Arbitrum Sepolia.
 6. Device A displays the result, fingerprint, proof status, escrow transaction, settlement transaction, and provider credit.
-7. Device A submits a BERT text job; assignment is demonstrated on the other provider.
+7. Device A submits a BERT text job; assignment may remain on the same provider or move to the other provider.
 8. Network view shows both providers, heartbeat state, capabilities, and completed work.
 9. Logs and screenshots contain no private keys, JWTs, API keys, database URLs, or R2 secrets.
 

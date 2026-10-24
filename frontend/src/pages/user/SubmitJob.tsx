@@ -63,7 +63,10 @@ export default function SubmitJob({ models: suppliedModels, backend = jobBackend
     }
     if (!submissionInput) { setError('Choose a JPEG or PNG image, then try again'); return }
     if (selectedModel.max_input_size_mb && submissionInput.size > selectedModel.max_input_size_mb * 1024 * 1024) { setError(`Input is too large; maximum size is ${selectedModel.max_input_size_mb} MB`); return }
-    if (!modelMimeTypes(selectedModel).includes(submissionInput.type)) { setError('Choose a supported JPEG or PNG input'); return }
+    if (!modelMimeTypes(selectedModel).includes(submissionInput.type)) {
+      setError(selectedModel.input_type === 'text' ? 'Choose a supported text input' : 'Choose a supported JPEG or PNG input')
+      return
+    }
     if (!chain) { setError('Connect an Arbitrum Sepolia wallet before funding a job'); return }
     const activeAuthenticatedWallet = authenticatedWallet === undefined ? getAuthenticatedWallet() : authenticatedWallet
     if (!review) {

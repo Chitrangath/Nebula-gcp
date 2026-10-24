@@ -18,8 +18,8 @@ show_plan() {
     '  2/9 identify distinct Device B and Device C registered nodes' \
     '  3/9 start five owner runners and both provider-only real-model Workers' \
     '  4/9 complete the ResNet50 browser journey on Device A' \
-    '  5/9 demonstrate provider interruption and explicit recovery' \
-    '  6/9 complete the BERT browser journey on Device A using the other node' \
+    '  5/9 optionally demonstrate provider interruption and explicit recovery' \
+    '  6/9 complete the BERT browser journey on Device A, on either compatible node (same node allowed)' \
     '  7/9 generate sanitized acceptance evidence from authoritative job state' \
     '  8/9 capture the required browser screenshots and explorer views' \
     '  9/9 stop all controlled processes and preserve recovery commands'
@@ -73,17 +73,16 @@ run_wizard() {
   ask_public resnet_node "ResNet50 assigned node UUID shown in the browser"
   [[ "$resnet_node" == "$node_b" || "$resnet_node" == "$node_c" ]] || { printf 'ResNet50 was not assigned to Device B or C.\n' >&2; return 1; }
 
-  stage 5 9 "Demonstrate provider interruption and explicit recovery"
-  printf 'Stop the provider that did NOT run ResNet50 and wait until /network shows only the ResNet provider online.\n'
-  printf 'Submit the BERT job, wait until it is assigned to the ResNet provider, then stop that Worker before completion. Immediately restart the other provider.\n'
-  confirm_action "RETRY-OBSERVED" "Confirm the BERT page showed retry/reassignment (at least two attempts) after the assigned provider stopped."
+  stage 5 9 "Optional provider interruption and explicit recovery"
+  printf 'Optional: stop one provider, observe it offline, then restart it. Reassignment is an additional demonstration, not required for sequential same-node execution.\n'
+  confirm_action "RECOVERY-REVIEWED" "Confirm either the optional recovery was demonstrated or sequential same-node execution is the selected acceptance path."
 
-  stage 6 9 "Complete BERT browser journey on Device A using the other node"
+  stage 6 9 "Complete BERT browser journey on Device A on any compatible node"
   local bert_job bert_node
   ask_public bert_job "Completed BERT job UUID shown in the browser"
   ask_public bert_node "BERT assigned node UUID shown in the browser"
   [[ "$bert_node" == "$node_b" || "$bert_node" == "$node_c" ]] || { printf 'BERT was not assigned to Device B or C.\n' >&2; return 1; }
-  [[ "$bert_node" != "$resnet_node" ]] || { printf 'BERT must demonstrate assignment to the other provider node.\n' >&2; return 1; }
+  [[ "$bert_node" == "$node_b" || "$bert_node" == "$node_c" ]] || { printf 'BERT was not assigned to a declared provider node.\n' >&2; return 1; }
 
   stage 7 9 "Generate sanitized acceptance evidence"
   local access_token

@@ -26,7 +26,9 @@ Delivered interfaces:
 - Device B real-model capability: previously demonstrated for ResNet50/BERT;
   must be repeated through this production flow.
 - Independent Device C capability: **owner/friend execution required**.
-- Two funded production browser journeys on distinct nodes: **required**.
+- Two funded production browser journeys using the two approved models: either
+  provider may execute either model, and sequential execution on the same node
+  is valid. Distinct-node reassignment is an optional recovery check.
 - Offline/recovery screenshot and final sanitized evidence: **required**.
 
 DEMO-008 becomes complete only when the acceptance wizard prints

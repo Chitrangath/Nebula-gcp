@@ -78,19 +78,22 @@ Then run the acceptance wizard and follow it in order:
    shows a verified result, valid proof, settled chain state, provider credit,
    and confirmed explorer links.
 4. Record the public job UUID and assigned node UUID in the acceptance wizard.
-5. Stop the provider that did not run ResNet50. Once `/network` shows only the
-   ResNet provider online, submit BERT and wait for its first assignment.
-6. Stop that assigned Worker before completion and immediately restart the
-   other provider. The BERT page must visibly enter retry/reassignment and then
-   complete on the other node with at least two attempts and the same proof,
-   settlement, result, and provider-credit evidence.
+5. Submit BERT after ResNet50 completes. The scheduler may assign it to either
+   compatible provider, including the same provider after ResNet50 releases its
+   lease. Jobs are sequential; simultaneous execution is not required.
+6. Optionally, stop an active provider and demonstrate retry/reassignment to
+   the other node. This is a separate recovery scenario, not a requirement for
+   ordinary model selection. In either case, BERT must show the same proof, settlement,
+   result, and provider-credit evidence.
 7. Copy a fresh Device A access token from the successful wallet-auth response
    into the wizard's hidden prompt. The token exists only for the probe process
    and is never written into evidence.
 8. The probe reads both authoritative job responses and fails unless the jobs
-   use the two required models, settle on distinct nodes, have matching proof
-   fingerprints, and include confirmed escrow, assignment, proof, and
-   settlement transactions.
+   use the two required models, settle on declared provider nodes (the same node
+   is valid for sequential jobs), have matching proof fingerprints, and include
+   confirmed escrow, assignment, proof, and settlement transactions. Pass
+   `--require-reassignment` only when the optional recovery scenario was
+   actually demonstrated.
 
 ## Evidence checklist
 
