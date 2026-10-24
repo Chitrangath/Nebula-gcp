@@ -534,6 +534,7 @@ class RenderedConfigurationContractTest(unittest.TestCase):
             "CONTRACT_DEPLOYMENT_BLOCK": "123456",
             "CONTRACT_OWNER_ADDRESS": "0x" + "22" * 20,
             "CONTRACT_VERIFIER_ADDRESS": "0x" + "33" * 20,
+            "DEMO_VERIFIER_NODE_ID": "64c079fe-9a99-41e6-be23-6de817c81463",
             "R2_ACCOUNT_ID": "a" * 32,
             "R2_BUCKET_NAME": "nebula-demo-private",
             "OBJECT_STORAGE_PREFIX": "demo",

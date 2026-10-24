@@ -164,7 +164,7 @@ run_wizard() {
   open_url "https://console.cloud.google.com/cloud-resource-manager"
   open_url "https://cloud.google.com/run/pricing"
   open_url "https://docs.arbitrum.io/build-decentralized-apps/reference/useful-addresses"
-  local project region service_name frontend_origin contract_address deployment_block owner_address verifier_address
+  local project region service_name frontend_origin contract_address deployment_block owner_address verifier_address verifier_node_id
   ask_public project "Exact owner-approved GCP project ID"
   ask_public region "Exact owner-approved Cloud Run region"
   ask_public service_name "Cloud Run service name"
@@ -174,14 +174,17 @@ run_wizard() {
   ask_public deployment_block "Existing contract deployment block"
   ask_public owner_address "Existing contract owner address"
   ask_public verifier_address "Existing contract Verifier address"
+  ask_public verifier_node_id "Registered GPU node ID hosted by the Verifier device"
   reject_placeholder GCP_PROJECT_ID "$project"
   reject_placeholder GCP_REGION "$region"
   reject_placeholder CLOUD_RUN_SERVICE "$service_name"
   reject_placeholder NEBULA_PAYMENT_CONTRACT "$contract_address"; reject_placeholder CONTRACT_DEPLOYMENT_BLOCK "$deployment_block"
   reject_placeholder CONTRACT_OWNER_ADDRESS "$owner_address"; reject_placeholder CONTRACT_VERIFIER_ADDRESS "$verifier_address"
+  reject_placeholder DEMO_VERIFIER_NODE_ID "$verifier_node_id"
   confirm_action "I-ACCEPT-COST-RISK" "Billing, logs, builds, registry, secrets, egress, R2, and Supabase can incur charges; budgets are not hard caps."
   save_value GCP_PROJECT_ID "$project"; save_value GCP_REGION "$region"; save_value CLOUD_RUN_SERVICE "$service_name"; save_value FRONTEND_URL "$frontend_origin"
   save_value NEBULA_PAYMENT_CONTRACT "$contract_address"; save_value CONTRACT_DEPLOYMENT_BLOCK "$deployment_block"; save_value CONTRACT_OWNER_ADDRESS "$owner_address"; save_value CONTRACT_VERIFIER_ADDRESS "$verifier_address"
+  save_value DEMO_VERIFIER_NODE_ID "$verifier_node_id"
 
   stage 3 13 "Budget alerts and cost-review confirmation"
   open_url "https://console.cloud.google.com/billing/budgets"

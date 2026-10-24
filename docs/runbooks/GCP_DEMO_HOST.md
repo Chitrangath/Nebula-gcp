@@ -26,6 +26,10 @@ Vercel same-origin external rewrite
   │ /api/v1/:path* -> https://<real-cloud-run-origin>/v1/:path*
   ▼
 Cloud Run: FastAPI API only
+
+The owner-approved deployment configuration must include the registered GPU
+node UUID hosted by the Verifier device as `DEMO_VERIFIER_NODE_ID`. This is a
+public runtime identifier, not a wallet address or private signing key.
   ├── request-based CPU, min instances 0, max instances 2
   ├── RUNNERS_ENABLED=false
   ├── Secret Manager references, dedicated runtime identity

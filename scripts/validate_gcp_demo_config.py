@@ -18,6 +18,9 @@ IMAGE_DIGEST_PATTERN = re.compile(
 ADDRESS_PATTERN = re.compile(r"^0x[0-9a-fA-F]{40}$")
 R2_ACCOUNT_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 BUCKET_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
+UUID_PATTERN = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+)
 
 
 class ValidationError(ValueError):
@@ -192,6 +195,7 @@ def validate_service(service: dict[str, Any], *, template_mode: bool) -> None:
             "CONTRACT_DEPLOYMENT_BLOCK": "__OWNER_APPROVED_CONTRACT_DEPLOYMENT_BLOCK__",
             "CONTRACT_OWNER_ADDRESS": "__OWNER_APPROVED_CONTRACT_OWNER_ADDRESS__",
             "CONTRACT_VERIFIER_ADDRESS": "__OWNER_APPROVED_CONTRACT_VERIFIER_ADDRESS__",
+            "DEMO_VERIFIER_NODE_ID": "__OWNER_APPROVED_DEMO_VERIFIER_NODE_ID__",
             "R2_ACCOUNT_ID": "__OWNER_APPROVED_R2_ACCOUNT_ID__",
             "R2_BUCKET_NAME": "__OWNER_APPROVED_R2_BUCKET_NAME__",
             "OBJECT_STORAGE_PREFIX": "__OWNER_APPROVED_STORAGE_PREFIX__",
@@ -239,6 +243,13 @@ def validate_service(service: dict[str, Any], *, template_mode: bool) -> None:
                 is not None,
                 f"{name} must be a deployed address",
             )
+        require(
+            UUID_PATTERN.fullmatch(
+                environment.get("DEMO_VERIFIER_NODE_ID", {}).get("value", "")
+            )
+            is not None,
+            "DEMO_VERIFIER_NODE_ID must be a registered node UUID",
+        )
         require(
             str(
                 environment.get("CONTRACT_DEPLOYMENT_BLOCK", {}).get("value", "")

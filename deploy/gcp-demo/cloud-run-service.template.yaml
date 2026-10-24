@@ -105,6 +105,10 @@
                 "value": "__OWNER_APPROVED_CONTRACT_VERIFIER_ADDRESS__"
               },
               {
+                "name": "DEMO_VERIFIER_NODE_ID",
+                "value": "__OWNER_APPROVED_DEMO_VERIFIER_NODE_ID__"
+              },
+              {
                 "name": "STORAGE_ADAPTER",
                 "value": "s3"
               },

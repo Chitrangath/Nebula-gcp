@@ -6,7 +6,7 @@ Nebula now has an authenticated `/network` page that represents the connected AI
 
 - `GET /v1/network` returns the authenticated viewer, configured chain and Verifier authority, provider wallets, effective heartbeat state, model capabilities, current leases, and each node's last completed job.
 - Effective `online` state expires when the last heartbeat exceeds the configured scheduler TTL, so the page does not repeat a stale database label as live availability.
-- Provider and Verifier roles are displayed from backend identities; API keys, hashes, worker signer identities, proof envelopes, and private inputs are excluded.
+- Provider roles come from registered node ownership; Verifier placement comes from the explicit owner-approved `DEMO_VERIFIER_NODE_ID`. API keys, hashes, worker signer identities, proof envelopes, and private inputs are excluded.
 - The responsive page refreshes automatically every 10 seconds and on demand, with one contextual live-region update rather than competing badge announcements.
 - The evidence-boundary panel distinguishes backend-observed runtime state from Arbitrum Sepolia settlement authority.
 
@@ -22,7 +22,7 @@ Production acceptance remains in DEMO-008: deploy the backend/frontend revisions
 ## Verification
 
 - Backend: `367 passed, 71 skipped` across the complete suite, including local Anvil integration coverage.
-- Frontend: `75 passed` across 15 test files.
+- Frontend: `76 passed` across 16 test files.
 - ESLint, Ruff, TypeScript, generated OpenAPI synchronization, contract-artifact checks, and the production Vite build pass.
 - Targeted mypy reports no error in the new network router after its model-boundary casts. Existing transitive settings and untyped third-party dependency errors remain in the repository baseline.
 
@@ -62,5 +62,7 @@ The independent Standards and Spec reviews found no blocking or high-severity is
 4. Automatic polling is scheduled after both successful and failed requests, and a browser test proves recovery from a transient failure.
 
 The low-severity accessibility observation was also resolved: the changing announcement contains only contextual node/lease totals, while the observation timestamp remains visible but outside the live region.
+
+The final re-review identified two integration gaps, both resolved: the Verifier node ID is now required and validated throughout the Cloud Run renderer/wizard path, and the application header now exposes an accessible compact menu on narrow viewports with component coverage.
 
 **Final review disposition:** PASS. No unresolved Standards or Spec finding remains in the DEMO-007 implementation.
