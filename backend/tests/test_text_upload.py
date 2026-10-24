@@ -24,3 +24,12 @@ async def test_rejects_invalid_text_before_creating_job(value):
     upload = UploadFile(file=io.BytesIO(value), filename="review.txt", headers=Headers({"content-type": "text/plain"}))
     with pytest.raises(InputUploadError):
         await accept_text_upload(upload, supported_formats=["txt"], max_size_bytes=65536)
+
+
+@pytest.mark.asyncio
+async def test_rejects_text_that_cannot_fit_the_worker_token_window():
+    value = ("a" * 511).encode()
+    upload = UploadFile(file=io.BytesIO(value), filename="review.txt", headers=Headers({"content-type": "text/plain"}))
+
+    with pytest.raises(InputUploadError, match="510 Unicode characters"):
+        await accept_text_upload(upload, supported_formats=["txt"], max_size_bytes=65536)

@@ -74,5 +74,9 @@ describe('JobDetail', () => {
 
     expect(await screen.findByText(new RegExp(message, 'i'))).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Download result' })).not.toBeInTheDocument()
+    if (status === 'refunded') {
+      expect(screen.getByLabelText('Job lifecycle')).toHaveTextContent('Escrow confirmed')
+      expect(screen.getByLabelText('Job lifecycle')).not.toHaveTextContent('Escrow pending')
+    }
   })
 })

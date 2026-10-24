@@ -10,6 +10,7 @@ from fastapi import UploadFile
 
 READ_CHUNK_BYTES: Final = 64 * 1024
 MAX_IMAGE_DIMENSION: Final = 16_384
+MAX_BERT_INPUT_CODE_POINTS: Final = 510
 _SAFE_FILENAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
 _FORMATS = {
     "png": ("image/png", b"\x89PNG\r\n\x1a\n"),
@@ -55,6 +56,10 @@ async def accept_text_upload(
         raise InputUploadError("text must be valid UTF-8") from exc
     if not text.strip() or "\0" in text:
         raise InputUploadError("text must be nonempty and contain no NUL bytes")
+    # WordPiece cannot emit more tokens than input code points; reserve two
+    # positions for BERT's [CLS] and [SEP] tokens so execution never truncates.
+    if len(text) > MAX_BERT_INPUT_CODE_POINTS:
+        raise InputUploadError("BERT text must contain at most 510 Unicode characters")
     return AcceptedInput(data, "txt", "text/plain", 0, 0)
 
 

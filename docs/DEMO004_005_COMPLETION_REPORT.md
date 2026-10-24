@@ -21,10 +21,10 @@ Production rollout is intentionally separate from implementation completion. The
 
 ## Verification
 
-- Frontend: 64 component/module tests pass.
+- Frontend: 70 component/module tests pass.
 - Frontend: production TypeScript/Vite build passes.
 - Frontend: ESLint passes with zero warnings.
-- Backend: 361 tests pass and 71 environment/optional tests skip.
+- Backend: 362 tests pass and 71 environment/optional tests skip.
 - Focused provider/job backend acceptance: 35 tests pass.
 - OpenAPI document, manifest, and generated browser types are synchronized.
 - Ruff passes for the modified backend source and tests.
@@ -59,4 +59,11 @@ Production rollout is intentionally separate from implementation completion. The
 
 ## Review result
 
-This section is completed after the two-axis review. Any blocking finding must be resolved before this report is committed.
+The required review compared `1d955d2...01337c2` on separate Standards and Spec axes. Neither axis found a blocking or high-severity issue.
+
+- **Standards** found one medium external-boundary issue: canonical result parsing accepted invalid ranges, duplicate rows, empty rankings, and non-finite probabilities. The parser now requires bounded unique rows and finite probabilities in `[0, 1]`, with malformed-response regression tests.
+- **Spec** found two medium recovery issues: refunded jobs could say escrow was pending, and text longer than the Worker's executable BERT window could reach funding. The lifecycle now derives escrow confirmation from transaction evidence. Both the browser and backend now apply a conservative 510-code-point pre-escrow bound, reserving BERT's two special-token positions; regression tests cover both paths.
+- **Standards** also found this report's pending review placeholder. This completed section resolves that process finding.
+- One low, accepted follow-up remains: provider node enrichment performs two queries per node. That bounded pattern is appropriate for the two-provider demonstration, but should become a bulk query before the dashboard supports large provider fleets.
+
+All review fixes passed the complete frontend suite and production build, the complete backend suite, ESLint, Ruff, and the generated OpenAPI consistency check.

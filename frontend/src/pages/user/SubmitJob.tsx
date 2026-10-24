@@ -9,6 +9,8 @@ import { FundingError, FundingReviewChangedError, submitJob, TransactionError, W
 
 interface SubmitJobProps { models?: SupportedModel[]; backend?: JobBackend; chain?: ChainGateway; authenticatedWallet?: Hex | null }
 
+const MAX_BERT_INPUT_CODE_POINTS = 510
+
 const stageLabels: Record<SubmissionStage, string> = {
   uploading: 'Uploading and validating input…', checking_funds: 'Checking live price and wallet funds…',
   approving: 'Waiting for exact USDC approval…', creating_escrow: 'Waiting for escrow transaction…',
@@ -55,6 +57,7 @@ export default function SubmitJob({ models: suppliedModels, backend = jobBackend
       const textBytes = new TextEncoder().encode(textInput)
       if (!textInput.trim()) { setError('Enter text for BERT sentiment analysis, then try again'); return }
       if (textInput.includes('\0')) { setError('Text cannot contain null characters'); return }
+      if (Array.from(textInput).length > MAX_BERT_INPUT_CODE_POINTS) { setError('BERT text is too long; enter at most 510 characters'); return }
       if (textBytes.byteLength > 65_536) { setError('Text is too large; maximum size is 64 KiB'); return }
       submissionInput = new File([textBytes], 'input.txt', { type: 'text/plain' })
     }
@@ -112,7 +115,7 @@ export default function SubmitJob({ models: suppliedModels, backend = jobBackend
         </label>
         {selectedModel?.input_type === 'text' ? <div><label htmlFor="bert-input" className="mb-2 block font-medium">Text to analyse</label>
           <textarea id="bert-input" value={textInput} onChange={(event) => { setTextInput(event.target.value); setError(null); setSubmittedJobId(null); checkpoint.current = null; setReview(null) }} rows={7} maxLength={65_536} aria-describedby="bert-input-help" className="w-full rounded-lg border border-gray-300 p-3 leading-6 focus:border-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-200" />
-          <span id="bert-input-help" className="mt-2 block text-sm text-gray-600">UTF-8 text, maximum 64 KiB. The worker rejects inputs above its 512-token limit rather than truncating them.</span>
+          <span id="bert-input-help" className="mt-2 block text-sm text-gray-600">UTF-8 text, maximum 510 characters. This conservative bound guarantees the input fits the worker's 512-token window without truncation.</span>
         </div> : <div><label htmlFor="resnet-input" className="mb-2 block font-medium">ResNet input image</label>
           <input id="resnet-input" type="file" accept={selectedModel ? modelMimeTypes(selectedModel).join(',') : undefined} onChange={(event) => { setInput(event.target.files?.[0] ?? null); setError(null); setSubmittedJobId(null); checkpoint.current = null; setReview(null) }} className="min-h-11 w-full rounded-lg border border-gray-300 p-3 file:mr-3 file:rounded file:border-0 file:bg-primary-50 file:px-3 file:py-2 file:font-medium file:text-primary-800" />
           {selectedModel?.max_input_size_mb ? <span className="mt-2 block text-sm text-gray-600">JPEG or PNG, maximum {selectedModel.max_input_size_mb} MB.</span> : null}

@@ -12,7 +12,8 @@ function explorerLink(value: unknown): string | null {
 
 function Lifecycle({ job }: { job: Job }) {
   const ranks: Record<string, number> = { pending_blockchain: 0, queued: 1, retry_pending: 1, assigned: 2, running: 3, proof_submitted: 4, verifying: 4, settling: 5, completed: 6 }
-  const rank = ranks[job.status] ?? 0
+  const escrowConfirmed = job.status !== 'expired_pre_escrow' && Boolean(job.escrow_transaction)
+  const rank = ranks[job.status] ?? (escrowConfirmed ? 1 : 0)
   const stages = [
     { label: rank === 0 ? 'Escrow pending' : 'Escrow confirmed', complete: rank >= 1 },
     { label: 'Queued', complete: rank >= 1 },

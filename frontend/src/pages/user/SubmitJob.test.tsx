@@ -100,4 +100,16 @@ describe('SubmitJob', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Enter text for BERT sentiment analysis')
     expect(deps.chain.inspectFunding).not.toHaveBeenCalled()
   })
+
+  it('rejects BERT text beyond the executable token-safe bound before funding', async () => {
+    const deps = dependencies()
+    render(<MemoryRouter><SubmitJob models={[bertModel]} backend={deps.backend} chain={deps.chain} authenticatedWallet={account} /></MemoryRouter>)
+
+    await userEvent.type(screen.getByLabelText('Text to analyse'), 'a'.repeat(511))
+    await userEvent.click(screen.getByRole('button', { name: 'Review funding' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('510 characters')
+    expect(deps.chain.inspectFunding).not.toHaveBeenCalled()
+    expect(deps.backend.createJob).not.toHaveBeenCalled()
+  })
 })

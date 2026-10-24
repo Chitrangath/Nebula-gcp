@@ -41,14 +41,26 @@ describe('job backend client', () => {
   })
 
   it('parses a canonical BERT result without interpreting untrusted fields', async () => {
+    const scores = [1, 2, 3, 4, 5].map((stars) => ({ stars, probability_hex: stars === 5 ? '0x1.0p-1' : '0x1.0p-4' }))
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
-      model_id: 'bert-base', stars: 5, scores: [{ stars: 5, probability_hex: '0x1.0p-1' }], ignored: '<script>',
+      model_id: 'bert-base', stars: 5, scores, ignored: '<script>',
     }), { status: 200 }))
 
     await expect(getJobResult('job-id')).resolves.toEqual({
-      model_id: 'bert-base', stars: 5, scores: [{ stars: 5, probability_hex: '0x1.0p-1' }],
+      model_id: 'bert-base', stars: 5, scores,
     })
     expect(probabilityFromHexFloat('0x1.0p-1')).toBe(0.5)
     expect(probabilityFromHexFloat('not-a-number')).toBeNull()
+  })
+
+  it.each([
+    { model_id: 'resnet50', top_k: [] },
+    { model_id: 'resnet50', top_k: [{ index: -1, probability_hex: '0x1.0p-1' }] },
+    { model_id: 'resnet50', top_k: [{ index: 1, probability_hex: '0x1.0p+1024' }] },
+    { model_id: 'bert-base', stars: 6, scores: [1, 2, 3, 4, 5].map((stars) => ({ stars, probability_hex: '0x1.0p-3' })) },
+    { model_id: 'bert-base', stars: 5, scores: [1, 2, 3, 4, 4].map((stars) => ({ stars, probability_hex: '0x1.0p-3' })) },
+  ])('rejects a non-canonical inference result at the API boundary', async (malformed) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(malformed), { status: 200 }))
+    await expect(getJobResult('job-id')).rejects.toThrow('Result has an invalid format')
   })
 })

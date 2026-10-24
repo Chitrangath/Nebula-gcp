@@ -70,19 +70,21 @@ export async function downloadJobResult(jobId: string, signal?: AbortSignal): Pr
 function parseJobResult(value: unknown): JobResult {
   if (!value || typeof value !== 'object' || !('model_id' in value)) throw new Error('Result has an invalid format')
   const result = value as Record<string, unknown>
-  if (result.model_id === 'resnet50' && Array.isArray(result.top_k) && result.top_k.every((item) => {
+  if (result.model_id === 'resnet50' && Array.isArray(result.top_k) && result.top_k.length >= 1 && result.top_k.length <= 5 && result.top_k.every((item) => {
     if (!item || typeof item !== 'object') return false
     const row = item as Record<string, unknown>
-    return typeof row.index === 'number' && Number.isInteger(row.index) && typeof row.probability_hex === 'string'
-  })) return {
+    return typeof row.index === 'number' && Number.isInteger(row.index) && row.index >= 0 &&
+      typeof row.probability_hex === 'string' && isProbabilityHex(row.probability_hex)
+  }) && new Set(result.top_k.map((item) => (item as Record<string, unknown>).index)).size === result.top_k.length) return {
     model_id: 'resnet50',
     top_k: result.top_k.map((item) => ({ index: item.index as number, probability_hex: item.probability_hex as string })),
   }
-  if (result.model_id === 'bert-base' && typeof result.stars === 'number' && Number.isInteger(result.stars) && Array.isArray(result.scores) && result.scores.every((item) => {
+  if (result.model_id === 'bert-base' && typeof result.stars === 'number' && Number.isInteger(result.stars) && result.stars >= 1 && result.stars <= 5 && Array.isArray(result.scores) && result.scores.length === 5 && result.scores.every((item) => {
     if (!item || typeof item !== 'object') return false
     const row = item as Record<string, unknown>
-    return typeof row.stars === 'number' && Number.isInteger(row.stars) && typeof row.probability_hex === 'string'
-  })) return {
+    return typeof row.stars === 'number' && Number.isInteger(row.stars) && row.stars >= 1 && row.stars <= 5 &&
+      typeof row.probability_hex === 'string' && isProbabilityHex(row.probability_hex)
+  }) && new Set(result.scores.map((item) => (item as Record<string, unknown>).stars)).size === 5) return {
     model_id: 'bert-base',
     stars: result.stars,
     scores: result.scores.map((item) => ({ stars: item.stars as number, probability_hex: item.probability_hex as string })),
@@ -110,7 +112,13 @@ export function probabilityFromHexFloat(value: string): number | null {
     fraction += Number.parseInt(fractionDigits[index], 16) / (16 ** (index + 1))
   }
   const number = (integer + fraction) * (2 ** Number.parseInt(match[4], 10))
-  return (match[1] ? -number : number)
+  const signed = match[1] ? -number : number
+  return Number.isFinite(signed) ? signed : null
+}
+
+function isProbabilityHex(value: string): boolean {
+  const probability = probabilityFromHexFloat(value)
+  return probability !== null && probability >= 0 && probability <= 1
 }
 
 function toBackendJob(job: JobResponse): BackendJob {
