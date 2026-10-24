@@ -63,4 +63,4 @@ The initial independent reviews each raised one medium-severity finding:
 1. **Standards**: job-linked transaction rows were not first scoped to the configured chain and contract, so a decoy deployment instance could be selected. Resolved by filtering transactions and events by chain, normalized contract, and selected instance, with a cross-chain regression fixture.
 2. **Spec**: the page showed only the expected job fingerprint, not the fingerprint submitted with the proof. Resolved with a separate typed `proof_fingerprint` response field, distinct browser labels, and a rejected-mismatch regression test.
 
-Final Standards and Spec re-review is performed against these fixes before handoff.
+Final re-review result: **Standards — PASS; Spec — PASS.** Both reviewers confirmed the fixes and reported no remaining high- or medium-severity findings.
