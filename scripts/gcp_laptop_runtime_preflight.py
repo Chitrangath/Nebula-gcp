@@ -40,6 +40,9 @@ async def check_api(origin: str) -> None:
 
 
 async def check_database(database_url: str) -> None:
+    # Application configuration uses SQLAlchemy's asyncpg dialect prefix;
+    # asyncpg itself accepts the native PostgreSQL URI scheme.
+    database_url = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
     connection = await asyncpg.connect(database_url, timeout=10)
     try:
         if await connection.fetchval("SELECT 1") != 1:
