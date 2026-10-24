@@ -18,12 +18,19 @@ def job(model: str, node: str, byte: str) -> dict[str, object]:
             "chain_id": 421614,
             "block_number": 322000000,
         }
+    attempt_history = [{"attempt_number": 1, "node_id": node, "status": "completed"}]
+    if model == "bert-base":
+        attempt_history = [
+            {"attempt_number": 1, "node_id": "11111111-1111-4111-8111-111111111111", "status": "failed"},
+            {"attempt_number": 2, "node_id": node, "status": "completed"},
+        ]
     return {
         "id": f"00000000-0000-4000-8000-{byte * 12}",
         "chain_job_id": "0x" + byte * 64,
         "model_id": model,
         "status": "completed",
         "attempt_count": 2 if model == "bert-base" else 1,
+        "attempt_history": attempt_history,
         "chain_id": 421614,
         "on_chain_state": "Settled",
         "proof_verification_status": "valid",
@@ -46,7 +53,11 @@ def run_probe(tmp_path: Path, jobs: dict[str, dict[str, object]]) -> subprocess.
     return subprocess.run(
         [
             "python3", str(PROBE), "--resnet-json", str(resnet),
-            "--bert-json", str(bert), "--output", str(tmp_path / "evidence.json"),
+            "--bert-json", str(bert),
+            "--device-b-node", "11111111-1111-4111-8111-111111111111",
+            "--device-c-node", "22222222-2222-4222-8222-222222222222",
+            "--source-commit", "a" * 40,
+            "--output", str(tmp_path / "evidence.json"),
         ],
         cwd=ROOT, check=False, capture_output=True, text=True,
     )
@@ -81,3 +92,17 @@ def test_probe_requires_bert_retry_evidence(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "retry/reassignment" in result.stderr
+
+
+def test_probe_rejects_distinct_but_undeclared_nodes(tmp_path: Path) -> None:
+    resnet = job("resnet50", "33333333-3333-4333-8333-333333333333", "1")
+    bert = job("bert-base", "44444444-4444-4444-8444-444444444444", "2")
+    bert["attempt_history"] = [
+        {"attempt_number": 1, "node_id": resnet["assigned_node_id"], "status": "failed"},
+        {"attempt_number": 2, "node_id": bert["assigned_node_id"], "status": "completed"},
+    ]
+
+    result = run_probe(tmp_path, {"resnet": resnet, "bert": bert})
+
+    assert result.returncode == 1
+    assert "declared Device B/C" in result.stderr

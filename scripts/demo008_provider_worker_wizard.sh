@@ -18,7 +18,7 @@ show_plan() {
   printf '%s\n' \
     'DEMO-008 provider-only GPU Worker:' \
     '  1/5 validate the GPU, repository, and Worker environment' \
-    '  2/5 download and verify the pinned BERT vocabulary and weights' \
+    '  2/5 download and verify the pinned BERT vocabulary' \
     '  3/5 capture this node API key and Worker signer without exposing either' \
     '  4/5 prepare a CUDA Worker for real ResNet50 and BERT execution' \
     '  5/5 start one provider-only Worker with status and stop controls' \
@@ -75,12 +75,23 @@ run_wizard() {
 
   stage 1 5 "Validate GPU, repository, and Worker environment"
   check_local
+  local approved_commit actual_commit
+  ask_public approved_commit "Owner-approved full source commit SHA"
+  actual_commit=$(git -C "$NEBULA_WIZARD_REPO_ROOT" rev-parse HEAD)
+  [[ "$approved_commit" =~ ^[0-9a-f]{40}$ && "$actual_commit" == "$approved_commit" ]] || { printf 'Provider source does not match the owner-approved commit.\n' >&2; return 1; }
+  if ! git -C "$NEBULA_WIZARD_REPO_ROOT" diff --quiet \
+    || ! git -C "$NEBULA_WIZARD_REPO_ROOT" diff --cached --quiet; then
+    printf 'Provider tracked worktree is dirty.\n' >&2; return 1
+  fi
+  if git -C "$NEBULA_WIZARD_REPO_ROOT" submodule status --recursive 2>/dev/null | grep -Eq '^[+-U]'; then
+    printf 'Provider submodule state does not match the reviewed commit.\n' >&2; return 1
+  fi
 
   stage 2 5 "Acquire and independently verify pinned BERT artifacts"
   local model_dir="${NEBULA_GCP_STATE_DIR}/models/bert-base"
   confirm_action "PREPARE-BERT" "Download or verify the pinned BERT release in the protected local model cache?"
-  run_command "prepare pinned BERT model" "${NEBULA_WIZARD_REPO_ROOT}/worker/.venv/bin/python" "${NEBULA_WIZARD_REPO_ROOT}/scripts/prepare_bert_model.py" --output-dir "$model_dir"
-  [[ -s "${model_dir}/vocab.txt" && -s "${model_dir}/model.safetensors" ]] || { printf 'Verified BERT artifacts are missing.\n' >&2; return 1; }
+  run_command "prepare pinned BERT vocabulary" "${NEBULA_WIZARD_REPO_ROOT}/worker/.venv/bin/python" "${NEBULA_WIZARD_REPO_ROOT}/scripts/prepare_bert_model.py" --output-dir "$model_dir" --vocab-only
+  [[ -s "${model_dir}/vocab.txt" ]] || { printf 'Verified BERT vocabulary is missing.\n' >&2; return 1; }
 
   stage 3 5 "Capture node identity and Worker credentials"
   local api_origin contract node_id api_key signing_key resnet_url
@@ -108,6 +119,7 @@ run_wizard() {
   write_assignment MODEL_ARTIFACT_URL "$resnet_url"
   write_assignment MODEL_CACHE_DIR "${NEBULA_GCP_STATE_DIR}/models/cache"
   write_assignment CHAIN_ID 421614
+  write_assignment SOURCE_COMMIT "$approved_commit"
 
   stage 5 5 "Start one provider-only Worker"
   confirm_action "START-PROVIDER-WORKER" "Start this real-model Worker now?"

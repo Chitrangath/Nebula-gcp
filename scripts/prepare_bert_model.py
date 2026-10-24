@@ -58,9 +58,11 @@ def acquire(directory: Path, filename: str, expected: str, limit: int) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--vocab-only", action="store_true")
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    for filename, (digest, limit) in FILES.items():
+    selected = {"vocab.txt": FILES["vocab.txt"]} if args.vocab_only else FILES
+    for filename, (digest, limit) in selected.items():
         acquire(args.output_dir, filename, digest, limit)
     manifest = {
         "model_id": "bert-base",
@@ -68,7 +70,7 @@ def main() -> None:
         "revision": REVISION,
         "model_version": REVISION,
         "preprocessing_version": "bert-sentiment-v1",
-        "files": {name: value[0] for name, value in FILES.items()},
+        "files": {name: value[0] for name, value in selected.items()},
     }
     (args.output_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n"

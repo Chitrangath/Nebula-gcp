@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Response, UploadFile
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,6 +59,12 @@ class ChainTransactionEvidence(BaseModel):
     block_number: int | None
 
 
+class JobAttemptEvidence(BaseModel):
+    attempt_number: int
+    node_id: str
+    status: str
+
+
 class JobResponse(BaseModel):
     id: str
     chain_job_id: str
@@ -72,6 +78,7 @@ class JobResponse(BaseModel):
     chain_id: int
     on_chain_state: str | None = None
     attempt_count: int = 0
+    attempt_history: list[JobAttemptEvidence] = Field(default_factory=list)
     current_lease_status: str | None = None
     proof_verification_status: str | None = None
     result_available: bool = False
@@ -433,6 +440,14 @@ async def get_single_job(
         proof_fingerprint=proof.fingerprint_hash if proof else None,
         on_chain_state=chain_state,
         attempt_count=len(attempts),
+        attempt_history=[
+            JobAttemptEvidence(
+                attempt_number=attempt.attempt_number,
+                node_id=str(attempt.node_id),
+                status=attempt.status,
+            )
+            for attempt in attempts
+        ],
         assigned_node_id=str(assigned_node.id) if assigned_node else None,
         assigned_gpu_name=assigned_node.gpu_name if assigned_node else None,
         assigned_provider_address=assigned_provider.wallet_address if assigned_provider else None,

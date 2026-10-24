@@ -9,11 +9,12 @@ import os
 import re
 import urllib.error
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import Any
 
 TX_HASH = re.compile(r"^0x[0-9a-fA-F]{64}$")
-NODE_ID = re.compile(r"^[0-9a-fA-F-]{36}$")
+COMMIT = re.compile(r"^[0-9a-f]{40}$")
 
 
 class AcceptanceError(ValueError):
@@ -65,7 +66,9 @@ def validate_job(job: dict[str, Any], expected_model: str) -> dict[str, Any]:
     if expected_model == "bert-base" and attempt_count < 2:
         raise AcceptanceError("BERT has no retry/reassignment evidence")
     node_id = job.get("assigned_node_id")
-    if not isinstance(node_id, str) or NODE_ID.fullmatch(node_id) is None:
+    try:
+        uuid.UUID(str(node_id))
+    except ValueError:
         raise AcceptanceError(f"{expected_model} has no valid assigned node")
     fingerprint = job.get("fingerprint")
     if fingerprint != job.get("proof_fingerprint") or not isinstance(fingerprint, str):
@@ -98,6 +101,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bert-json", type=Path)
     parser.add_argument("--resnet-job")
     parser.add_argument("--bert-job")
+    parser.add_argument("--device-b-node", required=True)
+    parser.add_argument("--device-c-node", required=True)
+    parser.add_argument("--source-commit", required=True)
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 
@@ -105,6 +111,16 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
+        declared_nodes = {args.device_b_node.lower(), args.device_c_node.lower()}
+        if len(declared_nodes) != 2:
+            raise AcceptanceError("Device B and Device C node IDs must differ")
+        for node_id in declared_nodes:
+            try:
+                uuid.UUID(node_id)
+            except ValueError:
+                raise AcceptanceError("declared Device B/C node ID is invalid") from None
+        if COMMIT.fullmatch(args.source_commit) is None:
+            raise AcceptanceError("source commit must be a full lowercase Git SHA")
         if args.api_origin:
             if not args.resnet_job or not args.bert_job:
                 raise AcceptanceError("live mode requires both job IDs")
@@ -121,7 +137,27 @@ def main() -> int:
         journeys = [validate_job(resnet_job, "resnet50"), validate_job(bert_job, "bert-base")]
         if journeys[0]["assigned_node_id"] == journeys[1]["assigned_node_id"]:
             raise AcceptanceError("the two jobs must settle on distinct GPU nodes")
-        evidence = {"status": "passed", "chain_id": 421614, "journeys": journeys}
+        if {str(value["assigned_node_id"]).lower() for value in journeys} != declared_nodes:
+            raise AcceptanceError("settled jobs do not match the declared Device B/C nodes")
+        bert_history = bert_job.get("attempt_history")
+        if not isinstance(bert_history, list):
+            raise AcceptanceError("BERT has no retry/reassignment history")
+        sanitized_history = [
+            {
+                "attempt_number": item.get("attempt_number"),
+                "node_id": item.get("node_id"),
+                "status": item.get("status"),
+            }
+            for item in bert_history
+            if isinstance(item, dict)
+        ]
+        if len(sanitized_history) < 2 or sanitized_history[-2].get("status") not in {"failed", "expired"} or sanitized_history[-1].get("status") != "completed":
+            raise AcceptanceError("BERT has no failed-to-completed retry/reassignment history")
+        history_nodes = {str(item.get("node_id", "")).lower() for item in sanitized_history[-2:]}
+        if history_nodes != declared_nodes:
+            raise AcceptanceError("BERT retry/reassignment did not cross the declared Device B/C nodes")
+        journeys[1]["attempt_history"] = sanitized_history
+        evidence = {"status": "passed", "source_commit": args.source_commit, "chain_id": 421614, "declared_nodes": sorted(declared_nodes), "journeys": journeys}
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
         os.chmod(args.output, 0o600)

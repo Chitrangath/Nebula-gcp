@@ -45,9 +45,10 @@ run_wizard() {
 
   stage 1 9 "Verify reviewed deployment and direct health"
   check_local
-  local frontend_origin api_origin
+  local frontend_origin api_origin source_commit
   ask_public frontend_origin "Production Vercel HTTPS origin"
   ask_public api_origin "Cloud Run API HTTPS origin"
+  ask_public source_commit "Reviewed full source commit SHA deployed to both GPU laptops"
   require_https_origin FRONTEND_URL "$frontend_origin"; require_https_origin CLOUD_RUN_ORIGIN "$api_origin"
   run_command "check Cloud Run liveness" curl --fail --silent --show-error --max-time 20 "${api_origin%/}/live"
   confirm_action "DEPLOYMENT-REVIEWED" "Confirm this production deployment contains the reviewed DEMO-001 through DEMO-007 commits."
@@ -88,7 +89,8 @@ run_wizard() {
   local access_token
   ask_secret access_token "Fresh Device A access token (kept only in this process)"
   DEMO008_ACCESS_TOKEN="$access_token" run_command "validate two authoritative settled journeys" \
-    python3 "$PROBE" --api-origin "$api_origin" --resnet-job "$resnet_job" --bert-job "$bert_job" --output "$EVIDENCE"
+    python3 "$PROBE" --api-origin "$api_origin" --resnet-job "$resnet_job" --bert-job "$bert_job" \
+      --device-b-node "$node_b" --device-c-node "$node_c" --source-commit "$source_commit" --output "$EVIDENCE"
   unset access_token DEMO008_ACCESS_TOKEN
 
   stage 8 9 "Capture screenshots and independent explorer evidence"

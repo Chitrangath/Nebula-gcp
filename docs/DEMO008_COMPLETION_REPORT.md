@@ -73,4 +73,30 @@ DEMO-008 becomes complete only when the acceptance wizard prints
 
 ## Review result
 
-Pending the mandatory post-commit Standards and Spec review.
+The independent Standards and Spec reviews found one high- and three
+medium-severity issues. All were resolved before handoff:
+
+1. The authenticated job response now exposes sanitized attempt history, and
+   the probe requires BERT to move from a failed/expired attempt to a completed
+   attempt across the two declared nodes. Attempt count alone is not accepted.
+2. Device B/C UUIDs are passed into the probe and must exactly equal the two
+   authoritative settled-job node IDs.
+3. Each provider wizard requires the same full reviewed commit, a clean tracked
+   tree, and consistent submodules; the commit is retained in sanitized
+   evidence.
+4. Provider setup downloads only the locally required pinned BERT vocabulary.
+   Runtime weights arrive through the private capability and are hash-verified
+   in the Worker's existing hash-keyed cache, avoiding a discarded duplicate
+   download.
+
+Verification after these fixes:
+
+- complete backend suite: `368 passed, 71 skipped`;
+- frontend suite: `76 passed` across 16 files;
+- DEMO-008 CLI/API behavior: `16 passed` in the combined focused run;
+- Ruff, ESLint, ShellCheck, Bash syntax, OpenAPI/type synchronization,
+  contract-artifact checks, and the production frontend build pass;
+- owner-laptop provider preflight passes with NVIDIA and PyTorch CUDA access.
+
+**Final review disposition:** pending re-review of the resolved findings. Live
+three-device execution remains an explicit owner/friend acceptance gate.

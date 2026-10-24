@@ -478,6 +478,29 @@
         "title": "HeartbeatResponse",
         "type": "object"
       },
+      "JobAttemptEvidence": {
+        "properties": {
+          "attempt_number": {
+            "title": "Attempt Number",
+            "type": "integer"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempt_number",
+          "node_id",
+          "status"
+        ],
+        "title": "JobAttemptEvidence",
+        "type": "object"
+      },
       "JobListResponse": {
         "properties": {
           "jobs": {
@@ -543,6 +566,13 @@
             "default": 0,
             "title": "Attempt Count",
             "type": "integer"
+          },
+          "attempt_history": {
+            "items": {
+              "$ref": "#/components/schemas/JobAttemptEvidence"
+            },
+            "title": "Attempt History",
+            "type": "array"
           },
           "chain_id": {
             "title": "Chain Id",

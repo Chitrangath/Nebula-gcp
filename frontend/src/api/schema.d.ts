@@ -717,6 +717,15 @@ export interface components {
             /** Detail */
             detail: string;
         };
+        /** JobAttemptEvidence */
+        JobAttemptEvidence: {
+            /** Attempt Number */
+            attempt_number: number;
+            /** Node Id */
+            node_id: string;
+            /** Status */
+            status: string;
+        };
         /** JobListResponse */
         JobListResponse: {
             /** Jobs */
@@ -736,6 +745,8 @@ export interface components {
              * @default 0
              */
             attempt_count: number;
+            /** Attempt History */
+            attempt_history?: components["schemas"]["JobAttemptEvidence"][];
             /** Chain Id */
             chain_id: number;
             /** Chain Job Id */

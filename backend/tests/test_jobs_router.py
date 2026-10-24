@@ -183,6 +183,79 @@ async def test_job_detail_exposes_authoritative_chain_and_payment_evidence(db: A
 
 
 @pytest.mark.asyncio
+async def test_job_detail_exposes_sanitized_attempt_history(db: AsyncSession, seed_model):
+    user_id, token = await seed_authed_user(db)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        created = await create_job_request(client, token)
+        job_id = uuid.UUID(created.json()["id"])
+        job = (await db.execute(select(Job).where(Job.id == job_id))).scalar_one()
+        first = Node(
+            provider_id=user_id,
+            gpu_name="GPU B",
+            vram_gb=4,
+            status="offline",
+            api_key_hash="aa" * 32,
+        )
+        second = Node(
+            provider_id=user_id,
+            gpu_name="GPU C",
+            vram_gb=8,
+            status="online",
+            api_key_hash="bb" * 32,
+        )
+        db.add_all([first, second])
+        await db.flush()
+        first_lease = Lease(
+            job_id=job_id,
+            node_id=first.id,
+            lease_id="0x" + "10" * 32,
+            expires_at=datetime.now(timezone.utc),
+            status="failed",
+        )
+        second_lease = Lease(
+            job_id=job_id,
+            node_id=second.id,
+            lease_id="0x" + "20" * 32,
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            status="completed",
+        )
+        db.add_all([first_lease, second_lease])
+        await db.flush()
+        db.add_all(
+            [
+                JobAttempt(
+                    job_id=job_id,
+                    node_id=first.id,
+                    lease_id=first_lease.id,
+                    attempt_number=1,
+                    status="failed",
+                    error="lease_expired",
+                ),
+                JobAttempt(
+                    job_id=job_id,
+                    node_id=second.id,
+                    lease_id=second_lease.id,
+                    attempt_number=2,
+                    status="completed",
+                ),
+            ]
+        )
+        job.assigned_node_id = second.id
+        job.current_lease_id = second_lease.id
+        await db.commit()
+
+        response = await client.get(f"/v1/jobs/{job_id}", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    assert response.json()["attempt_history"] == [
+        {"attempt_number": 1, "node_id": str(first.id), "status": "failed"},
+        {"attempt_number": 2, "node_id": str(second.id), "status": "completed"},
+    ]
+    assert "lease_expired" not in response.text
+
+
+@pytest.mark.asyncio
 async def test_job_detail_distinguishes_expected_and_submitted_proof_fingerprints(db: AsyncSession, seed_model):
     user_id, token = await seed_authed_user(db)
     transport = ASGITransport(app=app)

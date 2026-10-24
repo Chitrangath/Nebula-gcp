@@ -44,10 +44,13 @@ cd ~/Nebula-gcp
 ./scripts/demo008_provider_worker_wizard.sh --status
 ```
 
-The provider wizard downloads the pinned BERT release, verifies its hashes,
-and starts one `multimodel` CUDA Worker. It asks only for that node's public
-configuration, API key, Worker signer, and approved ResNet50 artifact URL. It
-never receives database, R2, AI-user, Verifier, or backend-runner credentials.
+The provider wizard verifies the reviewed Git commit, downloads and verifies
+the pinned BERT vocabulary, and starts one `multimodel` CUDA Worker. The actual
+BERT weights arrive through the private lease capability and are independently
+checked by the Worker's hash-keyed model loader before execution. The wizard
+asks only for that node's public configuration, API key, Worker signer, and
+approved ResNet50 artifact URL. It never receives database, R2, AI-user,
+Verifier, or backend-runner credentials.
 
 On the **owner laptop**, start the five controlled backend runners with the
 existing GCP-006 wizard. Decline its legacy fixture Worker prompt because the
