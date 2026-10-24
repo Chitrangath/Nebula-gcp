@@ -626,6 +626,17 @@
             "title": "Price Base Units",
             "type": "string"
           },
+          "proof_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proof Fingerprint"
+          },
           "proof_transaction": {
             "anyOf": [
               {

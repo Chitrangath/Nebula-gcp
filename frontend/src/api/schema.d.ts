@@ -739,6 +739,8 @@ export interface components {
             on_chain_state?: string | null;
             /** Price Base Units */
             price_base_units: string;
+            /** Proof Fingerprint */
+            proof_fingerprint?: string | null;
             proof_transaction?: components["schemas"]["ChainTransactionEvidence"] | null;
             /** Proof Verification Status */
             proof_verification_status?: string | null;

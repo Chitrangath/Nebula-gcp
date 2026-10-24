@@ -7,6 +7,8 @@ The authenticated AI-user job page now presents a chain-reconciliation record su
 - Escrow, assignment, proof, settlement, and refund evidence is rendered as responsive transaction cards with observed status, block number, and direct Arbitrum Sepolia Explorer links.
 - The page shows the configured chain ID, job fingerprint, proof-verification status, provider-credit status, user-refund status, and reconciliation health.
 - `GET /v1/jobs/{job_id}` now returns a typed transaction-evidence contract rather than unstructured dictionaries.
+- Expected job and submitted proof fingerprints are presented separately so a rejected mismatch remains auditable.
+- Chain evidence is scoped to the configured chain, normalized contract address, and selected deployment instance before it reaches the browser.
 - Refund evidence is recovered from the canonical chain event and projected payment when a user submitted the refund transaction directly and no backend outbox transaction exists.
 - No private proof envelope, credential, JWT, API key, or signer secret is returned or displayed.
 
@@ -21,7 +23,7 @@ Production acceptance remains in DEMO-008: deploy the new backend/frontend revis
 
 ## Verification
 
-- Backend: `364 passed, 71 skipped` across the complete test suite.
+- Backend: `365 passed, 71 skipped` across the complete test suite, including local Anvil integration coverage.
 - Frontend: `72 passed` across 14 test files; ESLint passes with zero warnings.
 - Production frontend build passes, including TypeScript, OpenAPI, and contract-artifact checks.
 - Backend Ruff validation passes for the changed router and tests.
@@ -56,4 +58,9 @@ Production acceptance remains in DEMO-008: deploy the new backend/frontend revis
 
 ## Review result
 
-Pending the mandatory post-commit Standards and Spec review. Blocking or high-severity findings must be resolved before final handoff.
+The initial independent reviews each raised one medium-severity finding:
+
+1. **Standards**: job-linked transaction rows were not first scoped to the configured chain and contract, so a decoy deployment instance could be selected. Resolved by filtering transactions and events by chain, normalized contract, and selected instance, with a cross-chain regression fixture.
+2. **Spec**: the page showed only the expected job fingerprint, not the fingerprint submitted with the proof. Resolved with a separate typed `proof_fingerprint` response field, distinct browser labels, and a rejected-mismatch regression test.
+
+Final Standards and Spec re-review is performed against these fixes before handoff.

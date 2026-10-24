@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Response, UploadFile
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -67,6 +67,7 @@ class JobResponse(BaseModel):
     price_base_units: str
     deadline: str
     fingerprint: str | None = None
+    proof_fingerprint: str | None = None
     created_at: str
     chain_id: int
     on_chain_state: str | None = None
@@ -321,11 +322,16 @@ async def get_single_job(
     proof = None
     if attempts:
         proof = (await db.execute(select(Proof).where(Proof.job_attempt_id == attempts[-1].id))).scalar_one_or_none()
+    configured_contract = settings.NEBULA_PAYMENT_CONTRACT.lower()
     txs = list(
         (
             await db.execute(
                 select(ChainTransaction)
-                .where(ChainTransaction.job_id == job.id)
+                .where(
+                    ChainTransaction.job_id == job.id,
+                    ChainTransaction.chain_id == settings.CHAIN_ID,
+                    func.lower(ChainTransaction.contract_address) == configured_contract,
+                )
                 .order_by(ChainTransaction.created_at, ChainTransaction.id)
             )
         )
@@ -335,11 +341,17 @@ async def get_single_job(
     escrow_tx = next((value for value in reversed(txs) if value.tx_type == "createJob"), None)
     chain_instance_id = escrow_tx.chain_instance_id if escrow_tx else None
     if chain_instance_id is not None:
-        txs = [value for value in txs if value.chain_instance_id in (None, chain_instance_id)]
-    event_query = select(BlockchainEvent).where(BlockchainEvent.job_id == job.id)
-    if chain_instance_id is not None:
-        event_query = event_query.where(BlockchainEvent.chain_instance_id == chain_instance_id)
-    events = list((await db.execute(event_query)).scalars().all())
+        txs = [value for value in txs if value.chain_instance_id == chain_instance_id]
+        event_query = select(BlockchainEvent).where(
+            BlockchainEvent.job_id == job.id,
+            BlockchainEvent.chain_id == settings.CHAIN_ID,
+            func.lower(BlockchainEvent.contract_address) == configured_contract,
+            BlockchainEvent.chain_instance_id == chain_instance_id,
+        )
+        events = list((await db.execute(event_query)).scalars().all())
+    else:
+        txs = []
+        events = []
     payments = list((await db.execute(select(Payment).where(Payment.job_id == job.id))).scalars().all())
     cursor = None
     incident = None
@@ -349,7 +361,7 @@ async def get_single_job(
                 select(ChainCursor).where(
                     ChainCursor.chain_id == settings.CHAIN_ID,
                     ChainCursor.chain_instance_id == chain_instance_id,
-                    ChainCursor.contract_address == settings.NEBULA_PAYMENT_CONTRACT,
+                    func.lower(ChainCursor.contract_address) == configured_contract,
                 )
             )
         ).scalar_one_or_none()
@@ -358,7 +370,7 @@ async def get_single_job(
                 select(ReconciliationIncident.id).where(
                     ReconciliationIncident.chain_id == settings.CHAIN_ID,
                     ReconciliationIncident.chain_instance_id == chain_instance_id,
-                    ReconciliationIncident.contract_address == settings.NEBULA_PAYMENT_CONTRACT,
+                    func.lower(ReconciliationIncident.contract_address) == configured_contract,
                     ReconciliationIncident.status == "open",
                 )
             )
@@ -418,6 +430,7 @@ async def get_single_job(
         fingerprint=job.expected_fingerprint,
         created_at=job.created_at.isoformat() if job.created_at else "",
         chain_id=settings.CHAIN_ID,
+        proof_fingerprint=proof.fingerprint_hash if proof else None,
         on_chain_state=chain_state,
         attempt_count=len(attempts),
         assigned_node_id=str(assigned_node.id) if assigned_node else None,

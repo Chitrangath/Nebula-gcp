@@ -11,7 +11,7 @@ vi.mock('../../jobs/backend', async (importOriginal) => {
   return { ...actual, getJob: vi.fn(), getJobResult: vi.fn(), downloadJobResult: vi.fn() }
 })
 
-const job = { id: 'job-1', chain_job_id: '0xabc', chain_id: 421614, model_id: 'resnet50', status: 'completed', price_base_units: '50000', deadline: '2099-01-01T00:00:00Z', fingerprint: `0x${'11'.repeat(32)}`, created_at: '2026-01-01T00:00:00Z', attempt_count: 1, result_available: true, result_download_endpoint: '/v1/jobs/job-1/result', reconciliation_health: 'match', on_chain_state: 'Settled', proof_verification_status: 'valid', escrow_transaction: { hash: `0x${'aa'.repeat(32)}`, status: 'confirmed', chain_id: 421614, block_number: 322000001 }, settlement_transaction: { hash: `0x${'bb'.repeat(32)}`, status: 'confirmed', chain_id: 421614, block_number: 322000004 }, assignment_transaction: { hash: `0x${'cc'.repeat(32)}`, status: 'confirmed', chain_id: 421614, block_number: 322000002 }, proof_transaction: { hash: `0x${'dd'.repeat(32)}`, status: 'confirmed', chain_id: 421614, block_number: 322000003 }, refund_transaction: null, refund_status: null, provider_payment_credit_status: 'credited' }
+const job = { id: 'job-1', chain_job_id: '0xabc', chain_id: 421614, model_id: 'resnet50', status: 'completed', price_base_units: '50000', deadline: '2099-01-01T00:00:00Z', fingerprint: `0x${'11'.repeat(32)}`, proof_fingerprint: `0x${'22'.repeat(32)}`, created_at: '2026-01-01T00:00:00Z', attempt_count: 1, result_available: true, result_download_endpoint: '/v1/jobs/job-1/result', reconciliation_health: 'match', on_chain_state: 'Settled', proof_verification_status: 'valid', escrow_transaction: { hash: `0x${'aa'.repeat(32)}`, status: 'confirmed', chain_id: 421614, block_number: 322000001 }, settlement_transaction: { hash: `0x${'bb'.repeat(32)}`, status: 'confirmed', chain_id: 421614, block_number: 322000004 }, assignment_transaction: { hash: `0x${'cc'.repeat(32)}`, status: 'confirmed', chain_id: 421614, block_number: 322000002 }, proof_transaction: { hash: `0x${'dd'.repeat(32)}`, status: 'confirmed', chain_id: 421614, block_number: 322000003 }, refund_transaction: null, refund_status: null, provider_payment_credit_status: 'credited' }
 
 describe('JobDetail', () => {
   afterEach(() => { cleanup(); vi.clearAllMocks() })
@@ -37,6 +37,9 @@ describe('JobDetail', () => {
     expect(screen.getByText('Chain ID 421614')).toBeInTheDocument()
     expect(screen.getByText('credited')).toBeInTheDocument()
     expect(screen.getByText('322000003')).toBeInTheDocument()
+    expect(screen.getByText('Expected fingerprint')).toBeInTheDocument()
+    expect(screen.getByText('Submitted proof fingerprint')).toBeInTheDocument()
+    expect(screen.getByText(job.proof_fingerprint)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /escrow transaction/i })).toHaveAttribute('href', expect.stringContaining(job.escrow_transaction.hash))
     expect(screen.getByRole('link', { name: /proof transaction/i })).toHaveAttribute('href', expect.stringContaining(job.proof_transaction.hash))
     await userEvent.click(screen.getByRole('button', { name: 'Download result' }))

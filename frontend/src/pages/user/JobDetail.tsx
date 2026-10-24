@@ -152,7 +152,8 @@ export default function JobDetail() {
         <div><dt className="text-sm text-gray-600">Provider credit</dt><dd className="font-medium">{job.provider_payment_credit_status ?? 'Not credited'}</dd></div>
         <div><dt className="text-sm text-gray-600">User refund</dt><dd className="font-medium">{job.refund_status ?? 'Not credited'}</dd></div>
         <div><dt className="text-sm text-gray-600">Attempts</dt><dd className="font-medium">{job.attempt_count}</dd></div>
-        <div className="min-w-0"><dt className="text-sm text-gray-600">Fingerprint</dt><dd className="font-mono text-sm [overflow-wrap:anywhere]">{job.fingerprint ?? 'Pending'}</dd></div>
+        <div className="min-w-0"><dt className="text-sm text-gray-600">Expected fingerprint</dt><dd className="font-mono text-sm [overflow-wrap:anywhere]">{job.fingerprint ?? 'Pending'}</dd></div>
+        <div className="min-w-0"><dt className="text-sm text-gray-600">Submitted proof fingerprint</dt><dd className="font-mono text-sm [overflow-wrap:anywhere]">{job.proof_fingerprint ?? 'Pending'}</dd></div>
       </dl>
       <ChainEvidence job={job} />
       {canAccessResult ? <button type="button" onClick={() => void download()} disabled={downloading} className="mt-5 min-h-11 rounded-lg bg-primary-600 px-5 py-3 font-semibold text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-50">{downloading ? 'Preparing result…' : 'Download result'}</button> : null}

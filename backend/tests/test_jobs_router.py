@@ -11,7 +11,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.main import app
-from app.models import BlockchainEvent, ChainTransaction, Job, Payment, SupportedModel
+from app.models import (
+    BlockchainEvent,
+    ChainTransaction,
+    Job,
+    JobAttempt,
+    Lease,
+    Node,
+    Payment,
+    Proof,
+    SupportedModel,
+)
 from tests.conftest import seed_authed_user
 from tests.vectors import PNG_1X1
 
@@ -121,6 +131,37 @@ async def test_job_detail_exposes_authoritative_chain_and_payment_evidence(db: A
                 blockchain_tx_hash="0x" + "04" * 32,
             )
         )
+        db.add(
+            ChainTransaction(
+                chain_id=1,
+                chain_instance_id="0x" + "77" * 32,
+                contract_address="0x" + "de" * 20,
+                job_id=job_id,
+                tx_hash="0x" + "ff" * 32,
+                tx_type="createJob",
+                from_address="0x" + "11" * 20,
+                to_address="0x" + "de" * 20,
+                block_number=99_999_999,
+                status="finalized",
+                created_at=datetime.now(timezone.utc) + timedelta(days=1),
+                idempotency_key="decoy-chain-escrow",
+            )
+        )
+        db.add(
+            BlockchainEvent(
+                chain_id=1,
+                chain_instance_id="0x" + "77" * 32,
+                contract_address="0x" + "de" * 20,
+                transaction_hash="0x" + "fe" * 32,
+                log_index=0,
+                block_number=99_999_999,
+                block_hash="0x" + "fd" * 32,
+                event_name="TimeoutRefundCredited",
+                job_id=job_id,
+                event_data={"amount": 50_000},
+                confirmation_status="finalized",
+            )
+        )
         await db.flush()
 
         response = await client.get(f"/v1/jobs/{job_id}", headers={"Authorization": f"Bearer {token}"})
@@ -138,6 +179,67 @@ async def test_job_detail_exposes_authoritative_chain_and_payment_evidence(db: A
     assert body["proof_transaction"]["block_number"] == 322_000_003
     assert body["settlement_transaction"]["block_number"] == 322_000_004
     assert body["provider_payment_credit_status"] == "credited"
+    assert body["on_chain_state"] is None
+
+
+@pytest.mark.asyncio
+async def test_job_detail_distinguishes_expected_and_submitted_proof_fingerprints(db: AsyncSession, seed_model):
+    user_id, token = await seed_authed_user(db)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        created = await create_job_request(client, token)
+        job_id = uuid.UUID(created.json()["id"])
+        job = (await db.execute(select(Job).where(Job.id == job_id))).scalar_one()
+        job.expected_fingerprint = "11" * 32
+        node = Node(
+            provider_id=user_id,
+            gpu_name="Test GPU",
+            vram_gb=8,
+            status="online",
+            api_key_hash="aa" * 32,
+        )
+        db.add(node)
+        await db.flush()
+        lease = Lease(
+            job_id=job_id,
+            node_id=node.id,
+            lease_id="0x" + "22" * 32,
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            status="active",
+        )
+        db.add(lease)
+        await db.flush()
+        attempt = JobAttempt(
+            job_id=job_id,
+            node_id=node.id,
+            lease_id=lease.id,
+            attempt_number=1,
+            status="completed",
+        )
+        db.add(attempt)
+        await db.flush()
+        db.add(
+            Proof(
+                job_attempt_id=attempt.id,
+                fingerprint_hash="33" * 32,
+                merkle_root="0x" + "44" * 32,
+                output_hash="55" * 32,
+                signature="0x" + "66" * 65,
+                signer_address="0x" + "77" * 20,
+                proof_timestamp=datetime.now(timezone.utc),
+                valid=False,
+                verification_status="verified",
+            )
+        )
+        await db.flush()
+
+        response = await client.get(f"/v1/jobs/{job_id}", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["fingerprint"] == "11" * 32
+    assert body["proof_fingerprint"] == "33" * 32
+    assert body["proof_verification_status"] == "invalid"
 
 
 @pytest.mark.asyncio
