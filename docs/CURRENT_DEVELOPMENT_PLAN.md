@@ -156,7 +156,7 @@ Acceptance gate:
 
 Execute after both FE-004 and WRK-003 are complete:
 
-1. **`QA-001` — Failure, concurrency, and recovery E2E matrix**
+1. **`QA-001` — Failure, concurrency, and recovery E2E matrix** — **DONE**; see `docs/QA001_FAILURE_RECOVERY_REPORT.md`.
 2. **`QA-002` — Application and protocol security closure**
 3. **`QA-003` — Reliability, performance, backup, and soak gate**
 

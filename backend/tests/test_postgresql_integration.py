@@ -200,7 +200,7 @@ class TestAlembicHeads:
         assert result.returncode == 0, f"alembic heads failed: {result.stderr}"
         lines = [ln.strip() for ln in result.stdout.strip().splitlines() if ln.strip()]
         assert len(lines) == 1, f"Expected 1 head, got {len(lines)}: {lines}"
-        assert "0008_proof_verification_claims" in lines[0]
+        assert "0009_payment_withdrawal_history" in lines[0]
 
 
 # ──────────────────────────────────────────────
@@ -252,7 +252,7 @@ class TestUpgradeCreatesTables:
         r = await pg_conn.execute(text("SELECT version_num FROM alembic_version"))
         row = r.fetchone()
         assert row is not None, "alembic_version table is empty"
-        assert row[0] == "0008_proof_verification_claims"
+        assert row[0] == "0009_payment_withdrawal_history"
 
 
 # ──────────────────────────────────────────────

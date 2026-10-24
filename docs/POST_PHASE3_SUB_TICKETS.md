@@ -372,9 +372,10 @@ is definitive where the diagram is intentionally simplified.
 
 ### QA-001 — Failure, concurrency, and recovery E2E matrix
 
-- State: `BLOCKED`
+- State: `DONE` (416 backend tests, 125 Foundry tests, and two repeated PostgreSQL/Anvil closure runs passed on 2026-10-24)
 - Actor: `AGENT` locally; `JOINT` for public staging cases
 - Depends on: FE-004, WRK-003
+- Evidence: `docs/QA001_FAILURE_RECOVERY_REPORT.md`.
 - Outcome: automate all system journeys in roadmap section 12.1.
 - Deliverables: valid/invalid proof, worker death/reassignment, stale worker,
   backend/RPC failure windows, event restart/backfill, chain-success/DB-failure,

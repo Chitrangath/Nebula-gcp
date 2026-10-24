@@ -52,4 +52,7 @@ async def test_readiness_returns_503_when_database_is_unavailable(failure: Excep
         response = await client.get("/ready")
 
     assert response.status_code == 503
-    assert response.json() == {"detail": "Database is unavailable"}
+    body = response.json()
+    assert body["detail"] == "Database is unavailable"
+    assert body["status"] == 503
+    assert body["instance"] == "/ready"
