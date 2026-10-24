@@ -12,6 +12,7 @@ from pathlib import Path
 import asyncpg
 import boto3
 import httpx
+from botocore.config import Config
 from web3 import Web3
 
 ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
@@ -62,6 +63,13 @@ def check_storage(config_dir: Path) -> None:
         region_name="auto",
         aws_access_key_id=read_value(config_dir, "R2_ACCESS_KEY_ID"),
         aws_secret_access_key=read_value(config_dir, "R2_SECRET_ACCESS_KEY"),
+        # Connectivity preflight must be bounded; the default botocore retry
+        # policy can otherwise block the supervised wizard for several minutes.
+        config=Config(
+            connect_timeout=10,
+            read_timeout=10,
+            retries={"max_attempts": 1, "mode": "standard"},
+        ),
     )
     client.head_bucket(Bucket=bucket)
 
@@ -91,7 +99,9 @@ def main() -> int:
     parser.add_argument("--config-dir", required=True, type=Path)
     args = parser.parse_args()
     try:
-        asyncio.run(run(args.config_dir))
+        # Keep the owner-guided wizard responsive when an external provider is
+        # unreachable despite individual client timeouts.
+        asyncio.run(asyncio.wait_for(run(args.config_dir), timeout=60))
     except Exception as exc:  # noqa: BLE001 - external clients vary; never expose secret-bearing errors
         digest = hashlib.sha256(type(exc).__name__.encode()).hexdigest()[:12]
         raise SystemExit(
