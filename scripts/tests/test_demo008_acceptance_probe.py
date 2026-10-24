@@ -106,3 +106,17 @@ def test_probe_rejects_distinct_but_undeclared_nodes(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "declared Device B/C" in result.stderr
+
+
+def test_probe_rejects_attempt_history_swapped_from_final_assignment(tmp_path: Path) -> None:
+    resnet = job("resnet50", "11111111-1111-4111-8111-111111111111", "1")
+    bert = job("bert-base", "22222222-2222-4222-8222-222222222222", "2")
+    bert["attempt_history"] = [
+        {"attempt_number": 1, "node_id": bert["assigned_node_id"], "status": "failed"},
+        {"attempt_number": 2, "node_id": resnet["assigned_node_id"], "status": "completed"},
+    ]
+
+    result = run_probe(tmp_path, {"resnet": resnet, "bert": bert})
+
+    assert result.returncode == 1
+    assert "final assigned node" in result.stderr

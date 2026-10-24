@@ -156,6 +156,11 @@ def main() -> int:
         history_nodes = {str(item.get("node_id", "")).lower() for item in sanitized_history[-2:]}
         if history_nodes != declared_nodes:
             raise AcceptanceError("BERT retry/reassignment did not cross the declared Device B/C nodes")
+        final_node = str(journeys[1]["assigned_node_id"]).lower()
+        if str(sanitized_history[-1].get("node_id", "")).lower() != final_node:
+            raise AcceptanceError("BERT completed attempt does not match the final assigned node")
+        if str(sanitized_history[-2].get("node_id", "")).lower() == final_node:
+            raise AcceptanceError("BERT failed attempt did not originate on the other declared node")
         journeys[1]["attempt_history"] = sanitized_history
         evidence = {"status": "passed", "source_commit": args.source_commit, "chain_id": 421614, "declared_nodes": sorted(declared_nodes), "journeys": journeys}
         args.output.parent.mkdir(parents=True, exist_ok=True)

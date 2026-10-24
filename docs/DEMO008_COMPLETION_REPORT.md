@@ -98,5 +98,10 @@ Verification after these fixes:
   contract-artifact checks, and the production frontend build pass;
 - owner-laptop provider preflight passes with NVIDIA and PyTorch CUDA access.
 
-**Final review disposition:** pending re-review of the resolved findings. Live
-three-device execution remains an explicit owner/friend acceptance gate.
+The final re-review found one additional medium false-pass involving swapped
+BERT history. The probe now requires the completed attempt to equal the job's
+final assigned node and the preceding failed/expired attempt to belong to the
+other declared node; a negative regression covers the inconsistent response.
+
+**Final review disposition:** PASS for implementation, Standards, and Spec.
+Live three-device execution remains an explicit owner/friend acceptance gate.
