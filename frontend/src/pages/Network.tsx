@@ -83,12 +83,16 @@ export default function Network() {
     void getNetworkSnapshot(controller.signal)
       .then((value) => {
         setSnapshot(value)
-        timer = setTimeout(() => setRevision((current) => current + 1), 10_000)
       })
       .catch((caught) => {
         if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : 'Could not load the network.')
       })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoading(false)
+          timer = setTimeout(() => setRevision((current) => current + 1), 10_000)
+        }
+      })
     return () => { controller.abort(); if (timer) clearTimeout(timer) }
   }, [revision])
 
@@ -109,7 +113,8 @@ export default function Network() {
     {loading && !snapshot ? <p role="status" className="mt-8 text-gray-700">Loading live network state…</p> : null}
 
     {snapshot ? <>
-      <p role="status" aria-atomic="true" className="mt-6 text-sm text-gray-600">Network observed at {new Date(snapshot.observed_at).toLocaleTimeString()} · {snapshot.nodes.length + 1} connected devices represented</p>
+      <p className="mt-6 text-sm text-gray-600">Network observed at {new Date(snapshot.observed_at).toLocaleTimeString()} · {snapshot.nodes.length + 1} connected devices represented</p>
+      <p role="status" aria-atomic="true" className="sr-only">{onlineCount} of {snapshot.nodes.length} GPU nodes online; {activeLeaseCount} active leases.</p>
       <section aria-label="Network summary" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[['Connected devices', snapshot.nodes.length + 1], ['Online GPU nodes', onlineCount], ['Active leases', activeLeaseCount], ['Chain ID', snapshot.chain_id]].map(([label, value]) => <div key={label} className="rounded-xl border border-gray-200 bg-white p-4"><p className="text-sm text-gray-600">{label}</p><p className="mt-1 font-mono text-2xl font-bold text-gray-950">{value}</p></div>)}
       </section>

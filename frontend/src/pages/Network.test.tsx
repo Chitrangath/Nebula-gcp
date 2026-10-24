@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -30,7 +30,7 @@ const snapshot = {
 } satisfies NetworkSnapshot
 
 describe('Network', () => {
-  afterEach(() => { cleanup(); vi.clearAllMocks() })
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.clearAllMocks() })
 
   it('shows all demo devices, roles, live work, and the trust boundary', async () => {
     vi.mocked(getNetworkSnapshot).mockResolvedValue(snapshot)
@@ -43,10 +43,12 @@ describe('Network', () => {
     expect(screen.getAllByText('GPU provider')).toHaveLength(2)
     expect(screen.getAllByText('Verifier').length).toBeGreaterThan(0)
     expect(screen.getByText('BERT sentiment')).toBeInTheDocument()
-    expect(screen.getByText(/active lease/i)).toBeInTheDocument()
+    expect(screen.getByText('Active leases')).toBeInTheDocument()
     expect(screen.getAllByRole('heading', { name: 'Last completed job' })).toHaveLength(2)
     expect(screen.getByRole('region', { name: 'Evidence boundaries' })).toHaveTextContent('Backend-observed')
     expect(screen.getByRole('region', { name: 'Evidence boundaries' })).toHaveTextContent('On-chain')
+    expect(screen.getByRole('status')).toHaveTextContent('1 of 2 GPU nodes online')
+    expect(screen.getByRole('status')).not.toHaveTextContent('observed at')
     expect(screen.queryByText(/api[_ -]?key/i)).not.toBeInTheDocument()
   })
 
@@ -60,6 +62,20 @@ describe('Network', () => {
     expect(within(screen.getByRole('article', { name: 'RTX 5050 network node' })).getByText(/offline/i)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Refresh network' }))
     expect(await within(screen.getByRole('article', { name: 'RTX 5050 network node' })).findByText(/online/i)).toBeInTheDocument()
+    expect(getNetworkSnapshot).toHaveBeenCalledTimes(2)
+  })
+
+  it('continues polling after a transient request failure', async () => {
+    vi.useFakeTimers()
+    vi.mocked(getNetworkSnapshot)
+      .mockRejectedValueOnce(new Error('Temporary outage'))
+      .mockResolvedValueOnce(snapshot)
+    render(<Network />)
+
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(screen.getByRole('alert')).toHaveTextContent('Temporary outage')
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
+    expect(screen.getByText('RTX 3050')).toBeInTheDocument()
     expect(getNetworkSnapshot).toHaveBeenCalledTimes(2)
   })
 })

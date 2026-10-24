@@ -22,7 +22,7 @@ Production acceptance remains in DEMO-008: deploy the backend/frontend revisions
 ## Verification
 
 - Backend: `367 passed, 71 skipped` across the complete suite, including local Anvil integration coverage.
-- Frontend: `74 passed` across 15 test files.
+- Frontend: `75 passed` across 15 test files.
 - ESLint, Ruff, TypeScript, generated OpenAPI synchronization, contract-artifact checks, and the production Vite build pass.
 - Targeted mypy reports no error in the new network router after its model-boundary casts. Existing transitive settings and untyped third-party dependency errors remain in the repository baseline.
 
@@ -54,4 +54,13 @@ Production acceptance remains in DEMO-008: deploy the backend/frontend revisions
 
 ## Review result
 
-Pending the mandatory post-commit Standards and Spec review. Blocking, high-, or medium-severity findings must be resolved before final handoff.
+The independent Standards and Spec reviews found no blocking or high-severity issue. Their four medium-severity findings were resolved before handoff:
+
+1. Verifier placement now uses the explicit `DEMO_VERIFIER_NODE_ID` configuration instead of assuming the Verifier key belongs to a provider or Worker identity.
+2. Heartbeat freshness compares timestamps at full precision against the scheduler TTL; a regression covers the sub-second expiry boundary.
+3. Latest completed work is selected per node with a ranked database query instead of loading every historical completed job on each poll.
+4. Automatic polling is scheduled after both successful and failed requests, and a browser test proves recovery from a transient failure.
+
+The low-severity accessibility observation was also resolved: the changing announcement contains only contextual node/lease totals, while the observation timestamp remains visible but outside the live region.
+
+**Final review disposition:** PASS. No unresolved Standards or Spec finding remains in the DEMO-007 implementation.

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     CONTRACT_DEPLOYMENT_BLOCK: int = 0
     CONTRACT_OWNER_ADDRESS: str = ""
     CONTRACT_VERIFIER_ADDRESS: str = ""
+    DEMO_VERIFIER_NODE_ID: str = ""
     CONFIRMATION_DEPTH: int = 1
     FINALITY_DEPTH: int = 10
     EVENT_BLOCK_RANGE: int = 500

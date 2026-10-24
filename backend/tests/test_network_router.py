@@ -8,6 +8,7 @@ from httpx import ASGITransport, AsyncClient
 from app.config import settings
 from app.main import app
 from app.models import Job, Lease, SupportedModel, User
+from app.routers import network as network_router
 from app.services.node_service import register_node
 from tests.conftest import seed_authed_user
 
@@ -17,7 +18,7 @@ async def test_network_snapshot_exposes_public_device_state_without_credentials(
     viewer_id, token = await seed_authed_user(db)
     verifier_address = "0x" + "38" * 20
     monkeypatch.setattr(settings, "CONTRACT_VERIFIER_ADDRESS", verifier_address)
-    provider_one = User(wallet_address=verifier_address, role="provider")
+    provider_one = User(wallet_address="0x" + "40" * 20, role="provider")
     provider_two = User(wallet_address="0x" + "50" * 20, role="provider")
     db.add_all(
         [
@@ -30,12 +31,22 @@ async def test_network_snapshot_exposes_public_device_state_without_credentials(
     await db.flush()
     first, _ = await register_node(db, provider_one.id, "RTX 3050", 4, "IN", "0x" + "11" * 20)
     second, _ = await register_node(db, provider_two.id, "RTX 5050", 8, "IN", "0x" + "22" * 20)
+    monkeypatch.setattr(settings, "DEMO_VERIFIER_NODE_ID", str(first.id))
     now = datetime.now(timezone.utc)
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now if tz is not None else now.replace(tzinfo=None)
+
+    monkeypatch.setattr(network_router, "datetime", FrozenDateTime)
     first.status = "online"
     first.supports_bert = True
     first.last_heartbeat = now - timedelta(seconds=15)
     second.status = "online"
-    second.last_heartbeat = now - timedelta(minutes=10)
+    second.last_heartbeat = now - timedelta(
+        seconds=settings.NODE_HEARTBEAT_TTL_SECONDS, milliseconds=1
+    )
     active_job = Job(
         user_id=viewer_id,
         model_id="bert-base",
@@ -55,7 +66,17 @@ async def test_network_snapshot_exposes_public_device_state_without_credentials(
         deadline=now + timedelta(hours=1),
         completed_at=now - timedelta(minutes=2),
     )
-    db.add_all([active_job, completed_job])
+    older_completed_job = Job(
+        user_id=viewer_id,
+        model_id="bert-base",
+        chain_job_id="0x" + "dd" * 32,
+        assigned_node_id=first.id,
+        status="completed",
+        price_base_units=50_000,
+        deadline=now + timedelta(hours=1),
+        completed_at=now - timedelta(minutes=5),
+    )
+    db.add_all([active_job, completed_job, older_completed_job])
     await db.flush()
     lease = Lease(
         job_id=active_job.id,
@@ -82,7 +103,7 @@ async def test_network_snapshot_exposes_public_device_state_without_credentials(
     nodes_by_name = {node["gpu_name"]: node for node in body["nodes"]}
     online = nodes_by_name["RTX 3050"]
     stale = nodes_by_name["RTX 5050"]
-    assert online["provider_wallet_address"].lower() == verifier_address.lower()
+    assert online["provider_wallet_address"].lower() == provider_one.wallet_address.lower()
     assert online["roles"] == ["gpu_provider", "verifier"]
     assert online["status"] == "online"
     assert 0 <= online["heartbeat_age_seconds"] < settings.NODE_HEARTBEAT_TTL_SECONDS

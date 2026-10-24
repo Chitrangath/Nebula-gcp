@@ -1,11 +1,11 @@
 """Authenticated, credential-free projection of the live demo network."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal, cast
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -58,25 +58,24 @@ class NetworkSnapshotResponse(BaseModel):
     nodes: list[NetworkNodeResponse]
 
 
-def _normalized_address(value: str | None) -> str | None:
-    if not value:
-        return None
-    return value.lower()
-
-
-def _heartbeat_age(observed_at: datetime, heartbeat: datetime | None) -> int | None:
+def _as_utc(heartbeat: datetime | None) -> datetime | None:
     if heartbeat is None:
         return None
     if heartbeat.tzinfo is None:
-        heartbeat = heartbeat.replace(tzinfo=timezone.utc)
-    return max(0, int((observed_at - heartbeat).total_seconds()))
+        return heartbeat.replace(tzinfo=timezone.utc)
+    return heartbeat
 
 
-def _effective_status(node: Node, heartbeat_age_seconds: int | None) -> str:
+def _heartbeat_age(observed_at: datetime, heartbeat: datetime | None) -> int | None:
+    heartbeat = _as_utc(heartbeat)
+    return None if heartbeat is None else max(0, int((observed_at - heartbeat).total_seconds()))
+
+
+def _effective_status(node: Node, observed_at: datetime) -> str:
     status = cast(str | None, node.status) or "pending"
-    if status == "online" and (
-        heartbeat_age_seconds is None or heartbeat_age_seconds > settings.NODE_HEARTBEAT_TTL_SECONDS
-    ):
+    heartbeat = _as_utc(cast(datetime | None, node.last_heartbeat))
+    cutoff = observed_at - timedelta(seconds=settings.NODE_HEARTBEAT_TTL_SECONDS)
+    if status == "online" and (heartbeat is None or heartbeat < cutoff):
         return "offline"
     return status
 
@@ -123,12 +122,21 @@ async def get_network_snapshot(
         for lease, job in active_rows:
             active_by_node.setdefault(lease.node_id, (lease, job))
 
+        completed_rank = func.row_number().over(
+            partition_by=Job.assigned_node_id,
+            order_by=(Job.completed_at.desc().nulls_last(), Job.id.desc()),
+        ).label("completed_rank")
+        ranked_completed = (
+            select(Job.id.label("job_id"), completed_rank)
+            .where(Job.assigned_node_id.in_(node_ids), Job.status == "completed")
+            .subquery()
+        )
         completed_jobs = list(
             (
                 await db.execute(
                     select(Job)
-                    .where(Job.assigned_node_id.in_(node_ids), Job.status == "completed")
-                    .order_by(Job.completed_at.desc().nulls_last(), Job.id.desc())
+                    .join(ranked_completed, ranked_completed.c.job_id == Job.id)
+                    .where(ranked_completed.c.completed_rank == 1)
                 )
             )
             .scalars()
@@ -138,15 +146,12 @@ async def get_network_snapshot(
             completed_by_node.setdefault(job.assigned_node_id, job)
 
     verifier_address = settings.CONTRACT_VERIFIER_ADDRESS or None
-    normalized_verifier = _normalized_address(verifier_address)
+    verifier_node_id = settings.DEMO_VERIFIER_NODE_ID.lower()
     nodes: list[NetworkNodeResponse] = []
     for node, provider in node_rows:
         heartbeat_age = _heartbeat_age(observed_at, node.last_heartbeat)
         roles: list[Literal["gpu_provider", "verifier"]] = ["gpu_provider"]
-        if normalized_verifier is not None and normalized_verifier in {
-            _normalized_address(provider.wallet_address),
-            _normalized_address(node.worker_signer_address),
-        }:
+        if verifier_node_id and str(node.id).lower() == verifier_node_id:
             roles.append("verifier")
         active = active_by_node.get(node.id)
         completed = completed_by_node.get(node.id)
@@ -157,7 +162,7 @@ async def get_network_snapshot(
                 vram_gb=node.vram_gb,
                 provider_wallet_address=provider.wallet_address,
                 roles=roles,
-                status=_effective_status(node, heartbeat_age),
+                status=_effective_status(node, observed_at),
                 last_heartbeat=node.last_heartbeat,
                 heartbeat_age_seconds=heartbeat_age,
                 supported_models=_supported_models(node),
