@@ -401,9 +401,12 @@ is definitive where the diagram is intentionally simplified.
 
 ### QA-003 — Reliability, performance, backup, and soak gate
 
-- State: `BLOCKED`
+- State: `PARTIAL` (local backup/restore, concurrency/nonce, restart/recovery,
+  storage, and bounded integration checks passed; owner-controlled soak,
+  staging backup, throttling, and capacity measurements remain)
 - Actor: `JOINT`
 - Depends on: QA-002
+- Evidence: `docs/QA003_RELIABILITY_REPORT.md`.
 - Outcome: establish measured operational limits and recovery evidence.
 - Deliverables: 24-hour worker soak with restarts; backend runner restarts;
   database backup/restore; RPC throttling; event backfill; storage integrity;
