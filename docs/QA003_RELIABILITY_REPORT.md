@@ -20,6 +20,15 @@ simulated with local fixtures or the production Supabase database.
 - Foundry contract suite: **152 passed**.
 - Private storage integrity and event backfill/restart behavior are covered by
   the QA-001 and Phase 3 durability suites.
+- Cloud Run bounded health sample against the current deployed origin: 20/20
+  `/live` requests succeeded (p50 `230.6 ms`, p95 `22.0 s`, max `22.0 s`) and
+  20/20 `/ready` requests succeeded (p50 `264.8 ms`, p95 `436.4 ms`). The
+  `/live` tail reflects cold starts with the reviewed min-instances-zero
+  configuration and is recorded as an operational observation, not hidden.
+- The protected `CLOUD_RUN_ORIGIN` now matches the deployed service URL.
+- Owner-created Supabase logical backup: custom archive with 673 TOC entries
+  and 181 table/table-data entries; the archive is stored outside the repo and
+  contains no repository secrets.
 
 ## Remaining owner-controlled gates
 
