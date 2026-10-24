@@ -38,9 +38,16 @@ class JobExecutor:
         self.session = None
 
     async def _download_model_chunks(self, spec):
-        response = await self.request("GET", spec.artifact_url)
-        async for chunk in response.content.iter_chunked(64 * 1024):
-            yield chunk
+        if spec.artifact_url.startswith(("https://", "http://")):
+            response = await self.session.get(spec.artifact_url, allow_redirects=False)
+            response.raise_for_status()
+        else:
+            response = await self.request("GET", spec.artifact_url)
+        try:
+            async for chunk in response.content.iter_chunked(64 * 1024):
+                yield chunk
+        finally:
+            response.close()
 
     async def request(self, method, path, **kwargs):
         response = await self.session.request(
@@ -99,7 +106,9 @@ class JobExecutor:
             spec = ModelSpec(
                 model_id=lease["model_id"],
                 model_version=lease["model_version"],
-                artifact_url=f"/v1/worker/leases/{lid}/model",
+                artifact_url=(
+                    self.settings.MODEL_ARTIFACT_URL or f"/v1/worker/leases/{lid}/model"
+                ),
                 sha256=expected,
                 max_artifact_bytes=self.settings.MAX_MODEL_ARTIFACT_BYTES,
                 architecture="torchvision.models.resnet50",

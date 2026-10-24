@@ -352,16 +352,21 @@ is definitive where the diagram is intentionally simplified.
 
 ### WRK-003 — Worker signer migration and real-model system gates
 
-- State: `BLOCKED`
+- State: `DONE` (target-GPU repeatability, two integrated real-model Sepolia journeys, PostgreSQL recovery closure, and Anvil protocol settlement passed on 2026-10-24)
 - Actor: `AGENT` locally; `OWNER` for GPU/testnet access
 - Depends on: WRK-002, NET-003
+- Evidence: `docs/WRK003_RUNTIME_REPAIR_REPORT.md`; includes runtime repairs,
+  immutable artifact/input hashes, live job identifiers, regression results,
+  and explicit remaining gates.
 - Outcome: productionize configuration and prove the adapter through settlement.
 - Deliverables: deliberate `PRIVATE_KEY` to `WORKER_SIGNING_PRIVATE_KEY`
   compatibility/deprecation path; stale signer/lease tests; crash/retry tests;
   local Anvil real-model settlement; target-NVIDIA repeat run.
-- Acceptance: worker signer has no funds and is not provider/verifier; GPU gate
-  is reported blocked—not skipped—until hardware exists; owner-authorized
-  Sepolia real-model settlement passes before completion.
+- Acceptance: worker signer has no funds and is not provider/verifier; GPU
+  repeatability is demonstrated on the target NVIDIA device; owner-authorized
+  Sepolia real-model settlement passes without mocks. The disposable Anvil
+  suite covers protocol settlement and recovery without duplicating funded
+  public-chain execution.
 
 ## Milestone G — Integration, security, and reliability closure
 

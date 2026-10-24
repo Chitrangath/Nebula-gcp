@@ -21,7 +21,7 @@ import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import ChainTransaction, Job, Lease, Node, SupportedModel, User
+from app.models import ChainTransaction, Job, JobAttempt, Lease, Node, SupportedModel, User
 from app.services.assignment_dispatcher import AssignmentDispatcher
 from app.services.blockchain_service import FakeBlockchainBackend
 from app.services.job_service import confirm_job_escrow, create_job
@@ -232,6 +232,46 @@ class TestDispatcherDispatch:
 
 class TestDispatcherConfirmation:
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "authoritative_status",
+        [
+            "proof_submitted",
+            "verifying",
+            "settling",
+            "completed",
+            "refunded",
+            "awaiting_timeout_refund",
+            "failed",
+            "expired_pre_escrow",
+        ],
+    )
+    async def test_late_reverted_assignment_preserves_authoritative_job_status(
+        self, db: AsyncSession, dispatcher, scheduled_lease, authoritative_status
+    ):
+        job, lease, _ = scheduled_lease
+        await dispatcher.dispatch_pending_assignments(db)
+        chain_tx = (
+            await db.execute(select(ChainTransaction).where(ChainTransaction.lease_id == lease.id))
+        ).scalar_one()
+        job.status = authoritative_status
+        job.error_message = "authoritative job diagnostic"
+        await db.flush()
+        receipt = {"status": 0, "blockNumber": 100, "blockHash": b"\xab" * 32, "logs": []}
+
+        with patch.object(dispatcher._blockchain, "wait_for_receipt", return_value=receipt):
+            await dispatcher.confirm_assignment(
+                db,
+                lease_id=lease.id,
+                tx_hash=chain_tx.tx_hash,
+                block_number=100,
+                block_hash="0x" + "ab" * 32,
+            )
+
+        assert job.status == authoritative_status
+        assert job.error_message == "authoritative job diagnostic"
+        assert lease.status == "failed"
+
+    @pytest.mark.asyncio
     async def test_confirm_activates_lease(self, db: AsyncSession, dispatcher, scheduled_lease):
         """Confirmation activates the lease and transitions job to assigned."""
         job, lease, node = scheduled_lease
@@ -310,7 +350,19 @@ class TestDispatcherConfirmation:
         assert result is False
 
         tx_result2 = await db.execute(select(ChainTransaction).where(ChainTransaction.tx_hash == tx_hash))
-        assert tx_result2.scalar_one().status == "reverted"
+        reverted = tx_result2.scalar_one()
+        assert reverted.status == "reverted"
+        assert reverted.error == "assignProvider transaction reverted"
+        assert lease.status == "failed"
+        assert job.status == "retry_pending"
+        attempt = (await db.execute(select(JobAttempt).where(JobAttempt.lease_id == lease.id))).scalar_one()
+        assert attempt.status == "failed"
+        assert attempt.error == "assignProvider transaction reverted"
+        assert attempt.completed_at is not None
+        # The failed pending lease must no longer block a safe fresh attempt.
+        replacement = await schedule_next_job(db)
+        assert replacement is not None
+        assert replacement[2].id != lease.id
 
     @pytest.mark.asyncio
     async def test_confirm_missing_provider_assigned_event(self, db: AsyncSession, dispatcher, scheduled_lease):
@@ -388,6 +440,29 @@ class TestDispatcherConfirmation:
 
 
 class TestDispatcherReconciliation:
+    @pytest.mark.asyncio
+    async def test_reconcile_reverted_assignment_closes_exhausted_attempt(
+        self, db: AsyncSession, dispatcher, scheduled_lease
+    ):
+        job, lease, _ = scheduled_lease
+        job.current_attempt = job.max_attempts
+        await dispatcher.dispatch_pending_assignments(db)
+        chain_tx = (
+            await db.execute(select(ChainTransaction).where(ChainTransaction.lease_id == lease.id))
+        ).scalar_one()
+        receipt = {"status": 0, "blockNumber": 100, "blockHash": b"\xab" * 32, "logs": []}
+
+        with patch.object(dispatcher._blockchain, "wait_for_receipt", return_value=receipt):
+            result = await dispatcher.reconcile_existing_tx(db, tx_hash=chain_tx.tx_hash)
+
+        assert result["status"] == "reverted"
+        assert lease.status == "failed"
+        assert job.status == "attempts_exhausted"
+        attempt = (await db.execute(select(JobAttempt).where(JobAttempt.lease_id == lease.id))).scalar_one()
+        assert attempt.error == "assignProvider transaction reverted"
+        assert attempt.status == "failed"
+        assert await schedule_next_job(db) is None
+
     @pytest.mark.asyncio
     async def test_reconcile_already_mined(self, db: AsyncSession, dispatcher, scheduled_lease):
         """Reconcile fetches receipt for already-mined transaction."""

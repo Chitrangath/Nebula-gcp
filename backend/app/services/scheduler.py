@@ -13,7 +13,7 @@ before returning them to the worker.
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, text
+from sqlalchemy import DateTime, bindparam, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -22,27 +22,29 @@ from app.services.lease_service import create_lease
 
 
 async def _lock_next_queued_job(db: AsyncSession) -> uuid.UUID | None:
-    """Lock the oldest queued/retry_pending job. Uses FOR UPDATE SKIP LOCKED on PostgreSQL."""
+    """Lock the oldest eligible job, retaining confirmed leases until strict expiry."""
     dialect = db.bind.dialect.name if db.bind else "sqlite"
-
+    query = (
+        "SELECT id FROM jobs "
+        "WHERE status IN ('queued', 'retry_pending') "
+        "AND NOT EXISTS (SELECT 1 FROM leases WHERE leases.job_id = jobs.id "
+        "AND leases.status IN ('active','pending_chain')) "
+        # A worker failure closes the local attempt, but cannot shorten its
+        # confirmed on-chain lease. Reassignment at the exact expiry also
+        # reverts, so keep blocked retries out of the candidate selection.
+        "AND NOT EXISTS (SELECT 1 FROM leases previous "
+        "JOIN chain_transactions assignment ON assignment.lease_id = previous.id "
+        "WHERE previous.job_id = jobs.id AND previous.expires_at >= :now "
+        "AND assignment.tx_type = 'assignProvider' "
+        "AND assignment.status IN ('confirmed','finalized')) "
+        "ORDER BY created_at ASC LIMIT 1"
+    )
     if dialect == "postgresql":
-        result = await db.execute(
-            text(
-                "SELECT id FROM jobs "
-                "WHERE status IN ('queued', 'retry_pending') "
-                "AND NOT EXISTS (SELECT 1 FROM leases WHERE leases.job_id = jobs.id "
-                "AND leases.status IN ('active','pending_chain')) "
-                "ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED"
-            )
-        )
-    else:
-        result = await db.execute(
-            text(
-                "SELECT id FROM jobs WHERE status IN ('queued', 'retry_pending') "
-                "AND NOT EXISTS (SELECT 1 FROM leases WHERE leases.job_id = jobs.id "
-                "AND leases.status IN ('active','pending_chain')) ORDER BY created_at ASC LIMIT 1"
-            )
-        )
+        query += " FOR UPDATE SKIP LOCKED"
+    result = await db.execute(
+        text(query).bindparams(bindparam("now", type_=DateTime(timezone=True))),
+        {"now": datetime.now(timezone.utc)},
+    )
 
     row = result.first()
     if not row:

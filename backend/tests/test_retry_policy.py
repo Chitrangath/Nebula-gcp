@@ -3,14 +3,15 @@
 import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from app.main import app
-from app.models import Job, JobAttempt, Lease, Node, SupportedModel, User
-from app.services.retry_policy import reconcile_expired_leases
+from app.models import ChainTransaction, Job, JobAttempt, Lease, Node, SupportedModel, User
+from app.services.retry_policy import apply_attempt_failure, reconcile_expired_leases
 from app.services.scheduler import schedule_next_job
 from app.utils import uuid_to_bytes32
 
@@ -148,3 +149,96 @@ async def test_expired_deadline_never_schedules_another_attempt(db):
     assert attempt.status == "expired"
     assert node.active_leases == 0
     assert await schedule_next_job(db) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("assignment_status", "seconds_until_expiry", "can_schedule"),
+    [("confirmed", 1800, False), ("finalized", 0, False), ("confirmed", -1, True), ("reverted", 1800, True)],
+)
+async def test_worker_failure_waits_for_confirmed_on_chain_lease_expiry(
+    db, assignment_status, seconds_until_expiry, can_schedule
+):
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    job, lease, _, _, _, _ = await _seed_expiring_attempt(
+        db,
+        attempt_number=1,
+        deadline=datetime.now(timezone.utc) + timedelta(hours=3),
+    )
+    lease.expires_at = now + timedelta(seconds=seconds_until_expiry)
+    db.add(
+        ChainTransaction(
+            job_id=job.id,
+            lease_id=lease.id,
+            chain_id=421614,
+            contract_address="0x" + "77" * 20,
+            tx_type="assignProvider",
+            from_address="0x" + "88" * 20,
+            to_address="0x" + "77" * 20,
+            status=assignment_status,
+        )
+    )
+    await apply_attempt_failure(db, lease, reason="worker process crashed")
+
+    assert job.status == "retry_pending"
+    with patch("app.services.scheduler.datetime") as clock:
+        clock.now.return_value = now
+        result = await schedule_next_job(db)
+    assert (result is not None) is can_schedule
+    assert job.current_attempt == (2 if can_schedule else 1)
+
+
+@pytest.mark.asyncio
+async def test_blocked_oldest_retry_does_not_starve_a_queued_job(db):
+    now = datetime.now(timezone.utc)
+    blocked, lease, _, _, _, _ = await _seed_expiring_attempt(
+        db, attempt_number=1, deadline=now + timedelta(hours=3)
+    )
+    blocked.created_at = now - timedelta(hours=1)
+    lease.expires_at = now + timedelta(minutes=30)
+    db.add(
+        ChainTransaction(
+            job_id=blocked.id,
+            lease_id=lease.id,
+            chain_id=421614,
+            contract_address="0x" + "77" * 20,
+            tx_type="assignProvider",
+            from_address="0x" + "88" * 20,
+            to_address="0x" + "77" * 20,
+            status="confirmed",
+        )
+    )
+    await apply_attempt_failure(db, lease, reason="worker process crashed")
+    ready_id = uuid.uuid4()
+    ready = Job(
+        id=ready_id,
+        user_id=blocked.user_id,
+        model_id=blocked.model_id,
+        chain_job_id=uuid_to_bytes32(ready_id),
+        status="queued",
+        price_base_units=50_000,
+        deadline=now + timedelta(hours=3),
+        created_at=now,
+    )
+    db.add(ready)
+    await db.flush()
+
+    result = await schedule_next_job(db)
+
+    assert result is not None
+    assert result[0].id == ready.id
+    assert blocked.current_attempt == 1
+
+
+@pytest.mark.asyncio
+async def test_active_lease_verification_failure_can_still_retry(db):
+    job, lease, _, _, _, _ = await _seed_expiring_attempt(
+        db, attempt_number=1, deadline=datetime.now(timezone.utc) + timedelta(hours=3)
+    )
+    job.status = "verifying"
+
+    await apply_attempt_failure(db, lease, reason="Result object not found")
+
+    assert job.status == "retry_pending"
+    assert job.error_message == "Result object not found"
+    assert lease.status == "failed"

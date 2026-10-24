@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import and_, delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -885,6 +885,38 @@ class EventPoller:
         if provider_id is None:
             return
 
+        # Older runners recorded withdrawals without projecting them. Their
+        # cursor may already be past those events, so replay this provider's
+        # persisted finalized history once in chain order before the new event.
+        withdrawals = (
+            await db.execute(
+                select(BlockchainEvent)
+                .where(
+                    BlockchainEvent.chain_id == event.chain_id,
+                    BlockchainEvent.chain_instance_id == event.chain_instance_id,
+                    BlockchainEvent.contract_address == event.contract_address,
+                    BlockchainEvent.event_name == "WithdrawalCompleted",
+                    BlockchainEvent.confirmation_status == "finalized",
+                    func.lower(BlockchainEvent.event_data["provider"].as_string()) == provider_address,
+                    or_(
+                        BlockchainEvent.block_number < event.block_number,
+                        and_(
+                            BlockchainEvent.block_number == event.block_number,
+                            BlockchainEvent.log_index <= event.log_index,
+                        ),
+                    ),
+                )
+                .order_by(BlockchainEvent.block_number, BlockchainEvent.log_index)
+            )
+        ).scalars().all()
+        for withdrawal in withdrawals:
+            await self._apply_provider_withdrawal(db, withdrawal, provider_id)
+
+    async def _apply_provider_withdrawal(
+        self, db: AsyncSession, event: BlockchainEvent, provider_id: uuid.UUID
+    ) -> None:
+        """Reconcile and apply exactly one finalized provider withdrawal."""
+        data = event.event_data or {}
         already_projected = (
             await db.execute(
                 select(Payment).where(
@@ -906,6 +938,26 @@ class EventPoller:
                     Payment.provider_id == provider_id,
                     Payment.payment_type == "provider_credit",
                     Payment.status == "credited",
+                    # Replaying an older withdrawal must not consume credits
+                    # that were projected later in the chain's history. Use
+                    # canonical log position, never database insertion time.
+                    select(BlockchainEvent.id)
+                    .where(
+                        BlockchainEvent.transaction_hash == Payment.blockchain_tx_hash,
+                        BlockchainEvent.chain_id == event.chain_id,
+                        BlockchainEvent.chain_instance_id == event.chain_instance_id,
+                        BlockchainEvent.contract_address == event.contract_address,
+                        BlockchainEvent.event_name == "PaymentCredited",
+                        BlockchainEvent.confirmation_status.in_(("confirmed", "finalized")),
+                        or_(
+                            BlockchainEvent.block_number < event.block_number,
+                            and_(
+                                BlockchainEvent.block_number == event.block_number,
+                                BlockchainEvent.log_index < event.log_index,
+                            ),
+                        ),
+                    )
+                    .exists(),
                 )
                 .order_by(Payment.credited_at, Payment.id)
             )

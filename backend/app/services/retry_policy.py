@@ -14,6 +14,7 @@ async def apply_attempt_failure(db: AsyncSession, lease: Lease, *, reason: str, 
     attempt = (await db.execute(select(JobAttempt).where(JobAttempt.lease_id == lease.id))).scalar_one_or_none()
     node = (await db.execute(select(Node).where(Node.id == lease.node_id))).scalar_one_or_none()
     was_active = lease.status == "active"
+    was_pending = lease.status == "pending_chain"
     lease.status = status
     if attempt:
         attempt.status = "expired" if status == "expired" else "failed"
@@ -21,6 +22,14 @@ async def apply_attempt_failure(db: AsyncSession, lease: Lease, *, reason: str, 
         attempt.completed_at = datetime.now(timezone.utc)
     if node and was_active:
         node.active_leases = max(0, (node.active_leases or 1) - 1)
+    # A late failed assignment cannot undo proof processing or a terminal
+    # outcome. Active-lease proof verification failures can still retry.
+    protected_statuses = (
+        "settling", "completed", "refunded", "failed", "expired_pre_escrow", "awaiting_timeout_refund"
+    )
+    if job.status in protected_statuses or (was_pending and job.status in ("proof_submitted", "verifying")):
+        await db.flush()
+        return job
     if job.deadline.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
         job.status = "awaiting_timeout_refund"
     elif int(job.current_attempt or 0) >= int(job.max_attempts or 3):

@@ -143,6 +143,8 @@ def main() -> int:
             "contract": evidence["contract"],
             "journeys": journeys,
         }
+        if "execution" in evidence:
+            sanitized["execution"] = evidence["execution"]
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(sanitized, indent=2) + "\n", encoding="utf-8")
         args.output.chmod(0o600)

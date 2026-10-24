@@ -146,16 +146,22 @@ class ModelLoader:
         try:
             with os.fdopen(fd, "wb") as handle:
                 async with asyncio.timeout(self.timeout_seconds):
-                    async for chunk in self.download_factory(spec):
-                        if not chunk:
-                            continue
-                        size += len(chunk)
-                        if size > spec.max_artifact_bytes:
-                            raise ModelArtifactError(
-                                "model artifact exceeds its approved byte limit"
-                            )
-                        digest.update(chunk)
-                        handle.write(chunk)
+                    source = self.download_factory(spec)
+                    try:
+                        async for chunk in source:
+                            if not chunk:
+                                continue
+                            size += len(chunk)
+                            if size > spec.max_artifact_bytes:
+                                raise ModelArtifactError(
+                                    "model artifact exceeds its approved byte limit"
+                                )
+                            digest.update(chunk)
+                            handle.write(chunk)
+                    finally:
+                        close = getattr(source, "aclose", None)
+                        if close is not None:
+                            await close()
                 handle.flush()
                 os.fsync(handle.fileno())
             if size == 0:

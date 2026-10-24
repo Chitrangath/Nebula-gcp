@@ -47,14 +47,19 @@ from app.models import (
     ReconciliationIncident,
     SupportedModel,
 )
+from app.services.fingerprint import compute_fingerprint
 from app.services.storage import StorageRuntimeConfig, build_storage
+
+sys.path.insert(0, str(ROOT / "scripts"))
+from runtime_schema_preflight import require_current_schema
 
 API = "http://127.0.0.1:8013"
 MODEL_ID = "resnet50"
 MODEL_BYTES = b"nebula-net003-fixture-model-v1"
+MAX_REAL_MODEL_BYTES = 256 * 1024 * 1024
 PNG_1X1 = bytes.fromhex(
-    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
-    "0000000d49444154789c6360000000020001e221bc330000000049454e44ae426082"
+    "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de"
+    "0000000c49444154789c63606060000000040001f61738550000000049454e44ae426082"
 )
 LOG_DIR = Path("/tmp/nebula-net003-logs")
 SETTLED_STATE = 4
@@ -68,6 +73,8 @@ PROCESS_ENV_ALLOWLIST = (
     "HTTP_PROXY",
     "HTTPS_PROXY",
     "NO_PROXY",
+    "LD_LIBRARY_PATH",
+    "CUDA_VISIBLE_DEVICES",
 )
 
 
@@ -93,6 +100,81 @@ def build_smoke_storage(env: dict[str, str]):
             adapter="file", local_root=env["LOCAL_STORAGE_PATH"]
         )
     return build_storage(config)
+
+
+def resolve_model_artifact(env: dict[str, str]) -> tuple[bytes, str, int]:
+    """Resolve and verify the selected smoke artifact before storage or execution."""
+    adapter = env.get("NET003_EXECUTOR_ADAPTER", "fixture")
+    if adapter == "fixture":
+        return MODEL_BYTES, "NET003 deterministic fixture", 1
+    if adapter != "resnet50":
+        raise RuntimeError("unsupported NET003 executor adapter")
+    path_value = env.get("NET003_MODEL_ARTIFACT_PATH", "")
+    expected = env.get("NET003_MODEL_SHA256", "")
+    if not path_value or len(expected) != 64:
+        raise RuntimeError("real-model run requires artifact path and SHA-256")
+    path = Path(path_value).expanduser().resolve()
+    if not path.is_file() or path.suffix != ".safetensors":
+        raise RuntimeError("real-model artifact must be an existing safetensors file")
+    if path.stat().st_size <= 0 or path.stat().st_size > MAX_REAL_MODEL_BYTES:
+        raise RuntimeError("real-model artifact size is outside the approved range")
+    payload = path.read_bytes()
+    if hashlib.sha256(payload).hexdigest() != expected:
+        raise RuntimeError("real-model artifact SHA-256 mismatch")
+    return payload, "Approved torchvision ResNet50", 4
+
+
+def preflight_worker(env: dict[str, str]) -> dict[str, Any] | None:
+    """Require actual, restart-repeatable inference before any external mutations."""
+    if env.get("NET003_EXECUTOR_ADAPTER", "fixture") == "fixture":
+        return None
+    resolve_model_artifact(env)
+    artifact_url = env.get("NET003_MODEL_ARTIFACT_URL", "")
+    if env.get("NET003_START_LOCAL_API", "true") == "false" and not artifact_url:
+        raise RuntimeError(
+            "remote real-model run requires a private signed artifact URL"
+        )
+    worker_python = env.get("NET003_WORKER_PYTHON", str(WORKER / ".venv/bin/python"))
+    command = [
+        worker_python,
+        str(ROOT / "scripts/wrk003_worker_preflight.py"),
+        "--artifact",
+        env["NET003_MODEL_ARTIFACT_PATH"],
+        "--sha256",
+        env["NET003_MODEL_SHA256"],
+        "--device",
+        env.get("NET003_EXECUTOR_DEVICE", "cpu"),
+        "--input-hex",
+        PNG_1X1.hex(),
+    ]
+    child_env = process_base_environment()
+    child_env["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    if artifact_url:
+        child_env["WRK003_PREFLIGHT_ARTIFACT_URL"] = artifact_url
+    evidence: dict[str, Any] | None = None
+    for _ in range(2):
+        checked = subprocess.run(
+            command,
+            cwd=WORKER,
+            env=child_env,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+        )
+        if checked.returncode != 0:
+            raise RuntimeError(
+                f"offline worker preflight failed before any live writes: {checked.stderr.strip()}"
+            )
+        result = json.loads(checked.stdout)
+        child_env.pop("WRK003_PREFLIGHT_ARTIFACT_URL", None)
+        if evidence is not None and result != evidence:
+            raise RuntimeError("worker inference changed across process restart")
+        evidence = result
+    if evidence is not None:
+        evidence["restart_repeatability"] = "passed"
+        evidence["artifact_download_verified"] = bool(artifact_url)
+    return evidence
 
 
 def load_environment() -> dict[str, str]:
@@ -125,29 +207,36 @@ def load_environment() -> dict[str, str]:
 
 async def provision_static_model(env: dict[str, str]) -> None:
     """Provision only the isolated smoke model metadata and fixture artifact."""
+    model_bytes, model_name, vram_required_gb = resolve_model_artifact(env)
+    model_hash = hashlib.sha256(model_bytes).hexdigest()
+    model_key = (
+        f"models/{MODEL_ID}/{model_hash}.safetensors"
+        if env.get("NET003_EXECUTOR_ADAPTER") == "resnet50"
+        else f"models/{MODEL_ID}"
+    )
     if env.get("STORAGE_ADAPTER") == "s3":
         storage = build_smoke_storage(env)
         await storage.put_object_once(
-            f"models/{MODEL_ID}", MODEL_BYTES, "application/octet-stream"
+            model_key, model_bytes, "application/octet-stream"
         )
     else:
         local_storage = Path(env["LOCAL_STORAGE_PATH"])
-        artifact = local_storage / "models" / MODEL_ID
+        artifact = local_storage / model_key
         artifact.parent.mkdir(parents=True, exist_ok=True)
-        artifact.write_bytes(MODEL_BYTES)
+        artifact.write_bytes(model_bytes)
     engine = create_async_engine(env["DATABASE_URL"])
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
         model = await db.get(SupportedModel, MODEL_ID)
         if model is None:
-            model = SupportedModel(id=MODEL_ID, name="NET003 deterministic fixture")
+            model = SupportedModel(id=MODEL_ID, name=model_name)
             db.add(model)
         model.price_base_units = 50_000
-        model.vram_required_gb = 1
-        model.model_hash_sha256 = hashlib.sha256(MODEL_BYTES).hexdigest()
+        model.vram_required_gb = vram_required_gb
+        model.model_hash_sha256 = model_hash
         model.model_version = "1.0"
         model.preprocessing_version = "resnet50-v1"
-        model.model_source_url = f"models/{MODEL_ID}"
+        model.model_source_url = model_key
         model.max_input_size_mb = 1
         model.supported_formats = ["png"]
         model.input_type = "image"
@@ -258,6 +347,9 @@ async def create_and_wait(
     user_key: str,
     token: str,
     sequence: int,
+    resume_job_id: str | None = None,
+    execution: dict[str, Any] | None = None,
+    baseline_block: int | None = None,
 ) -> dict[str, Any]:
     """Execute one public API-to-chain journey and return public evidence."""
     started_at = time.monotonic()
@@ -265,42 +357,83 @@ async def create_and_wait(
         "Authorization": f"Bearer {token}",
         "Idempotency-Key": f"net003-{uuid.uuid4()}",
     }
-    created_response = await client.post(
-        "/v1/jobs",
-        headers=headers,
-        data={
-            "model_id": MODEL_ID,
-            "deadline": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
-        },
-        files={"input_file": (f"net003-{sequence}.png", PNG_1X1, "image/png")},
-    )
+    if resume_job_id:
+        # Resume only an owner-authorized public job; never recreate its escrow.
+        resume_job_id = str(uuid.UUID(resume_job_id))
+        created_response = await client.get(
+            f"/v1/jobs/{resume_job_id}", headers=headers
+        )
+    else:
+        created_response = await client.post(
+            "/v1/jobs",
+            headers=headers,
+            data={
+                "model_id": MODEL_ID,
+                "deadline": (
+                    datetime.now(timezone.utc) + timedelta(days=1)
+                ).isoformat(),
+            },
+            files={"input_file": (f"net003-{sequence}.png", PNG_1X1, "image/png")},
+        )
     if created_response.is_error:
         raise RuntimeError(
             f"job creation failed: {created_response.status_code} {created_response.text}"
         )
     created = created_response.json()
-    price = int(created["price_base_units"])
+    if execution is not None:
+        expected = compute_fingerprint(
+            job_id=created["id"],
+            model_id=MODEL_ID,
+            model_version="1.0",
+            model_hash=execution["model_sha256"],
+            input_hash=execution["input_sha256"],
+            preprocessing_version="resnet50-v1",
+        ).hex()
+        if created.get("fingerprint", "").removeprefix("0x") != expected:
+            raise RuntimeError(
+                "job fingerprint does not match the preflight artifact and input"
+            )
     user = Account.from_key(user_key).address
-    if usdc.functions.allowance(user, nebula.address).call() < price:
-        approval_tx = usdc.functions.approve(
-            nebula.address, price * 2
-        ).build_transaction({"from": user})
-        send_transaction(w3, user_key, approval_tx)
     chain_id = bytes.fromhex(created["chain_job_id"].removeprefix("0x"))
-    fingerprint = bytes.fromhex(created["fingerprint"].removeprefix("0x"))
-    escrow_hash, escrow_receipt = send_transaction(
-        w3,
-        user_key,
-        nebula.functions.createJob(chain_id, fingerprint).build_transaction(
-            {"from": user}
-        ),
-    )
-    confirmation = await client.post(
-        f"/v1/jobs/{created['id']}/confirm-escrow",
-        headers=headers,
-        json={"tx_hash": escrow_hash},
-    )
-    confirmation.raise_for_status()
+    credit_already_present = False
+    if resume_job_id:
+        if created["model_id"] != MODEL_ID:
+            raise RuntimeError("resumed job does not use the approved model")
+        escrow_hash = (created.get("escrow_transaction") or {}).get("hash")
+        if not escrow_hash:
+            raise RuntimeError("resumed job has no recorded escrow transaction")
+        escrow_receipt = dict(w3.eth.get_transaction_receipt(escrow_hash))
+        on_chain = (
+            nebula.functions.getJob(chain_id).call(block_identifier=baseline_block)
+            if baseline_block is not None
+            else nebula.functions.getJob(chain_id).call()
+        )
+        credit_already_present = on_chain[-1] == SETTLED_STATE
+        if escrow_receipt["status"] != 1 or on_chain[0].lower() != user.lower():
+            raise RuntimeError(
+                "resumed escrow is not confirmed for the configured AI user"
+            )
+    else:
+        price = int(created["price_base_units"])
+        if usdc.functions.allowance(user, nebula.address).call() < price:
+            approval_tx = usdc.functions.approve(
+                nebula.address, price * 2
+            ).build_transaction({"from": user})
+            send_transaction(w3, user_key, approval_tx)
+        fingerprint = bytes.fromhex(created["fingerprint"].removeprefix("0x"))
+        escrow_hash, escrow_receipt = send_transaction(
+            w3,
+            user_key,
+            nebula.functions.createJob(chain_id, fingerprint).build_transaction(
+                {"from": user}
+            ),
+        )
+        confirmation = await client.post(
+            f"/v1/jobs/{created['id']}/confirm-escrow",
+            headers=headers,
+            json={"tx_hash": escrow_hash},
+        )
+        confirmation.raise_for_status()
     deadline = time.monotonic() + 600
     latest = None
     while time.monotonic() < deadline:
@@ -328,6 +461,8 @@ async def create_and_wait(
         "duration_seconds": round(time.monotonic() - started_at, 3),
         "result_sha256": hashlib.sha256(downloaded.content).hexdigest(),
         "final": latest,
+        "resumed": resume_job_id is not None,
+        "credit_already_present": credit_already_present,
     }
 
 
@@ -463,6 +598,8 @@ async def assert_database(
 async def main() -> None:
     """Run the bounded NET003 topology and print a sanitized evidence record."""
     env = load_environment()
+    await require_current_schema(env["DATABASE_URL"])
+    execution = preflight_worker(env)
     await provision_static_model(env)
     w3 = Web3(
         Web3.HTTPProvider(env["ARBITRUM_SEPOLIA_RPC"], request_kwargs={"timeout": 20})
@@ -525,8 +662,14 @@ async def main() -> None:
                 "/v1/nodes",
                 headers={"Authorization": f"Bearer {provider_token}"},
                 json={
-                    "gpu_name": "NET003 fixture",
-                    "vram_gb": 24,
+                    "gpu_name": execution["gpu_name"]
+                    if execution and execution["gpu_name"]
+                    else "NET003 fixture",
+                    "vram_gb": (
+                        round(execution["gpu_memory_bytes"] / (1024**3))
+                        if execution and execution["gpu_memory_bytes"]
+                        else 24
+                    ),
                     "location": "testnet",
                     "worker_signer_address": env["NET003_WORKER_SIGNER_ADDRESS"],
                 },
@@ -587,24 +730,43 @@ async def main() -> None:
                     )
                 )
             worker_env = process_base_environment()
+            executor_adapter = env.get("NET003_EXECUTOR_ADAPTER", "fixture")
+            executor_device = env.get("NET003_EXECUTOR_DEVICE", "cpu")
             worker_env.update(
                 {
                     "NODE_ID": node["node_id"],
                     "API_KEY": node["api_key"],
-                    "PRIVATE_KEY": env["NET003_WORKER_PRIVATE_KEY"],
+                    "WORKER_SIGNING_PRIVATE_KEY": env["NET003_WORKER_PRIVATE_KEY"],
                     "BACKEND_URL": api_origin,
                     "VERIFYING_CONTRACT": env["NEBULA_PAYMENT_CONTRACT"],
-                    "EXECUTOR_ADAPTER": "fixture",
-                    "EXECUTOR_DEVICE": "cpu",
+                    "EXECUTOR_ADAPTER": executor_adapter,
+                    "EXECUTOR_DEVICE": executor_device,
+                    "MODEL_ARTIFACT_URL": env.get("NET003_MODEL_ARTIFACT_URL", ""),
+                    "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
                     "POLL_INTERVAL_SECONDS": "2",
                     "CHAIN_ID": env["CHAIN_ID"],
                 }
             )
             processes.append(
-                start_process([python, "worker.py"], WORKER, worker_env, "worker")
+                start_process(
+                    [env.get("NET003_WORKER_PYTHON", python), "worker.py"],
+                    WORKER,
+                    worker_env,
+                    "worker",
+                )
             )
             provider = Web3.to_checksum_address(env["NET003_PROVIDER_ADDRESS"])
-            pending_before = nebula.functions.getPendingWithdrawal(provider).call()
+            baseline_block = w3.eth.block_number
+            pending_before = nebula.functions.getPendingWithdrawal(provider).call(
+                block_identifier=baseline_block
+            )
+            resume_ids = [
+                value.strip()
+                for value in env.get("NET003_RESUME_JOB_IDS", "").split(",")
+                if value.strip()
+            ]
+            if len(resume_ids) > 2 or len(set(resume_ids)) != len(resume_ids):
+                raise RuntimeError("provide at most two distinct job IDs to resume")
             journeys = [
                 await create_and_wait(
                     client,
@@ -614,16 +776,32 @@ async def main() -> None:
                     env["NET003_AI_USER_PRIVATE_KEY"],
                     user_token,
                     i,
+                    resume_ids[i - 1] if i <= len(resume_ids) else None,
+                    execution,
+                    baseline_block,
                 )
                 for i in (1, 2)
             ]
             if journeys[0]["uuid"] == journeys[1]["uuid"]:
                 raise RuntimeError("journeys did not use distinct UUIDs")
             database = await assert_database(env, journeys)
+            if execution is not None and any(
+                journey["result_sha256"] != execution["result_sha256"]
+                for journey in journeys
+            ):
+                raise RuntimeError(
+                    "live inference output differs from offline preflight"
+                )
             for journey in journeys:
                 journey["input_sha256"] = database["input_sha256"][journey["uuid"]]
             pending = nebula.functions.getPendingWithdrawal(provider).call()
-            expected = pending_before + nebula.functions.jobPrice().call() * 2
+            # Resumed jobs may already be credited before this process started.
+            newly_credited = sum(
+                not item["credit_already_present"] for item in journeys
+            )
+            expected = (
+                pending_before + nebula.functions.jobPrice().call() * newly_credited
+            )
             if pending != expected:
                 raise RuntimeError(
                     f"provider pending withdrawal mismatch: {pending} != {expected}"
@@ -667,6 +845,8 @@ async def main() -> None:
                 "withdrawal_block": withdrawal_receipt["blockNumber"],
                 "logs": str(LOG_DIR),
             }
+            if execution is not None:
+                result["execution"] = execution
             print(json.dumps(result, indent=2))
     finally:
         stop_processes(processes)

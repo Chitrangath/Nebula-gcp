@@ -10,10 +10,13 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     NODE_ID: str
     API_KEY: str
-    PRIVATE_KEY: str = Field(validation_alias=AliasChoices("WORKER_SIGNING_PRIVATE_KEY", "PRIVATE_KEY"))
+    PRIVATE_KEY: str = Field(
+        validation_alias=AliasChoices("WORKER_SIGNING_PRIVATE_KEY", "PRIVATE_KEY")
+    )
     BACKEND_URL: str = "https://api.nebula.ai"
     CUDA_VISIBLE_DEVICES: str = "0"
     MODEL_CACHE_DIR: str = "/tmp/nebula-models"
+    MODEL_ARTIFACT_URL: str | None = None
     LOG_LEVEL: str = "INFO"
     TZ: str = "UTC"
     POLL_INTERVAL_SECONDS: float = 2.0

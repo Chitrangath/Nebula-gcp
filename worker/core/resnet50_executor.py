@@ -69,6 +69,7 @@ def preprocess_resnet50(input_bytes: bytes) -> Tensor:
     except (
         UnidentifiedImageError,
         OSError,
+        SyntaxError,
         Image.DecompressionBombError,
         Image.DecompressionBombWarning,
     ) as exc:

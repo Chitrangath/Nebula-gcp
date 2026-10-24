@@ -182,6 +182,16 @@ def test_corrupt_or_truncated_inputs_fail_safely(payload: bytes) -> None:
         preprocess_resnet50(payload)
 
 
+def test_malformed_png_chunk_is_reported_as_safe_input_failure() -> None:
+    # The original live smoke image has a broken chunk, despite a valid PNG header.
+    payload = bytes.fromhex(
+        "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+        "0000000d49444154789c6360000000020001e221bc330000000049454e44ae426082"
+    )
+    with pytest.raises(ModelExecutionError, match="corrupt, truncated, or unsafe"):
+        preprocess_resnet50(payload)
+
+
 def test_decoded_dimension_limit_is_enforced(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("core.resnet50_executor.MAX_IMAGE_DIMENSION", 10)
     with pytest.raises(ModelExecutionError, match="dimensions"):

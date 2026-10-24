@@ -35,6 +35,7 @@ from app.services.blockchain_service import (
 from app.services.chain_outbox import get_chain_instance_id, prepare_and_broadcast, rebroadcast_prepared
 from app.services.job_service import update_job_status
 from app.services.lease_service import activate_lease
+from app.services.retry_policy import apply_attempt_failure
 from app.services.tx_signer import TransactionSigner
 
 logger = logging.getLogger(__name__)
@@ -294,6 +295,10 @@ class AssignmentDispatcher:
         if receipt.get("status") != 1:
             logger.warning("Transaction %s reverted on-chain", tx_hash)
             chain_tx.status = "reverted"
+            chain_tx.error = "assignProvider transaction reverted"
+            lease_obj = (await db.execute(select(Lease).where(Lease.id == lease_id))).scalar_one_or_none()
+            if lease_obj is not None and lease_obj.status == "pending_chain":
+                await apply_attempt_failure(db, lease_obj, reason="assignProvider transaction reverted")
             await db.flush()
             return False
 
@@ -391,6 +396,12 @@ class AssignmentDispatcher:
 
         if receipt.get("status") != 1:
             chain_tx.status = "reverted"
+            chain_tx.error = "assignProvider transaction reverted"
+            lease_obj = (
+                await db.execute(select(Lease).where(Lease.id == chain_tx.lease_id))
+            ).scalar_one_or_none()
+            if lease_obj is not None and lease_obj.status == "pending_chain":
+                await apply_attempt_failure(db, lease_obj, reason="assignProvider transaction reverted")
             await db.flush()
             return {"status": "reverted"}
 

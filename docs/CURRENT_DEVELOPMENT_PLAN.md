@@ -27,6 +27,7 @@ This plan does not replace the PRD or ticket acceptance criteria. It identifies 
 |---|---|
 | `DONE` | Required implementation and acceptance evidence exist. |
 | `LOCAL DONE` | Local implementation is complete, but an owner-controlled or public-environment gate remains. |
+| `PARTIAL` | Implementation or acceptance evidence exists, with named required gates still outstanding. |
 | `READY` | Dependencies are satisfied and work can start. |
 | `BLOCKED` | A named dependency or owner-controlled gate must complete first. |
 | `PLANNED` | The ticket belongs later in the accepted sequence. |
@@ -133,9 +134,16 @@ Acceptance gate:
 ### Step 6 — Close the real Worker path
 
 **Ticket:** `WRK-003`  
-**Status:** `READY` after reconfirming WRK-002 and NET-003 evidence; may run alongside Step 5
+**Status:** `DONE` — target-GPU repeatability, two integrated real-model Sepolia journeys, PostgreSQL recovery closure, and Anvil settlement passed
 
 Complete Worker signer migration and real-model system gates using the approved immutable ResNet50 model artifact, deterministic adapter, target GPU, proof envelope, verifier, and Sepolia settlement path.
+
+Evidence and runtime repairs: `docs/WRK003_RUNTIME_REPAIR_REPORT.md`.
+The stale-signer/lease and crash/retry recovery gates have PostgreSQL-backed
+closure evidence. The integrated public journey is the stronger end-to-end gate;
+the disposable Anvil suite verifies protocol settlement without duplicating
+funded public execution. The successful live run used the current Cloud Run API and repaired
+laptop runners; no new Cloud Run image was deployed.
 
 Acceptance gate:
 
@@ -167,9 +175,10 @@ Do not call the project production-ready until REL-001 records an explicit launc
 
 ## 5. Immediate next action
 
-The next action is the FE-004 browser/Anvil acceptance gate, followed by the
-owner-authorized Sepolia browser journey. Hosted infrastructure mutations remain
-owner-controlled and require explicit approval.
+Continue WRK-003 with the remaining local real-model Anvil and recovery gates;
+its target-GPU/Sepolia acceptance has passed. FE-004's separate browser/Anvil and
+Sepolia browser gates remain required before QA-001. Hosted infrastructure
+mutations remain owner-controlled and require explicit approval.
 
 ## 6. Working rules for every ticket
 

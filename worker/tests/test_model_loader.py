@@ -129,6 +129,26 @@ async def test_over_limit_download_is_rejected(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_byte_limit_closes_download_immediately(tmp_path: Path) -> None:
+    closed = False
+
+    async def chunks(_spec: ModelSpec) -> AsyncIterator[bytes]:
+        nonlocal closed
+        try:
+            yield ARTIFACT
+        finally:
+            closed = True
+
+    with pytest.raises(ModelArtifactError, match="byte limit"):
+        await ModelLoader(tmp_path, download_factory=chunks).get_artifact(
+            spec(max_artifact_bytes=1)
+        )
+    assert closed, (
+        "a failed bounded download must release its network connection immediately"
+    )
+
+
+@pytest.mark.asyncio
 async def test_corrupt_cache_is_atomically_replaced(tmp_path: Path) -> None:
     target = tmp_path / f"{spec().sha256}.safetensors"
     target.write_bytes(b"corrupt")
