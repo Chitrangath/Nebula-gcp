@@ -562,6 +562,17 @@ export interface components {
             /** Model Id */
             model_id: string;
         };
+        /** ChainTransactionEvidence */
+        ChainTransactionEvidence: {
+            /** Block Number */
+            block_number: number | null;
+            /** Chain Id */
+            chain_id: number;
+            /** Hash */
+            hash: string;
+            /** Status */
+            status: string;
+        };
         /** ChallengeRequest */
         ChallengeRequest: {
             /** Wallet Address */
@@ -699,15 +710,14 @@ export interface components {
             assigned_node_id?: string | null;
             /** Assigned Provider Address */
             assigned_provider_address?: string | null;
-            /** Assignment Transaction */
-            assignment_transaction?: {
-                [key: string]: unknown;
-            } | null;
+            assignment_transaction?: components["schemas"]["ChainTransactionEvidence"] | null;
             /**
              * Attempt Count
              * @default 0
              */
             attempt_count: number;
+            /** Chain Id */
+            chain_id: number;
             /** Chain Job Id */
             chain_job_id: string;
             /** Completed At */
@@ -718,10 +728,7 @@ export interface components {
             current_lease_status?: string | null;
             /** Deadline */
             deadline: string;
-            /** Escrow Transaction */
-            escrow_transaction?: {
-                [key: string]: unknown;
-            } | null;
+            escrow_transaction?: components["schemas"]["ChainTransactionEvidence"] | null;
             /** Fingerprint */
             fingerprint?: string | null;
             /** Id */
@@ -732,10 +739,7 @@ export interface components {
             on_chain_state?: string | null;
             /** Price Base Units */
             price_base_units: string;
-            /** Proof Transaction */
-            proof_transaction?: {
-                [key: string]: unknown;
-            } | null;
+            proof_transaction?: components["schemas"]["ChainTransactionEvidence"] | null;
             /** Proof Verification Status */
             proof_verification_status?: string | null;
             /** Provider Payment Credit Status */
@@ -747,6 +751,7 @@ export interface components {
             reconciliation_health: string;
             /** Refund Status */
             refund_status?: string | null;
+            refund_transaction?: components["schemas"]["ChainTransactionEvidence"] | null;
             /**
              * Result Available
              * @default false
@@ -754,10 +759,7 @@ export interface components {
             result_available: boolean;
             /** Result Download Endpoint */
             result_download_endpoint?: string | null;
-            /** Settlement Transaction */
-            settlement_transaction?: {
-                [key: string]: unknown;
-            } | null;
+            settlement_transaction?: components["schemas"]["ChainTransactionEvidence"] | null;
             /** Started At */
             started_at?: string | null;
             /** Status */

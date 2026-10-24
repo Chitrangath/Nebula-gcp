@@ -52,6 +52,13 @@ async def _cleanup_created_input(storage: StorageBackend, key: str, *, created: 
         logger.exception("Compensating input-object cleanup failed")
 
 
+class ChainTransactionEvidence(BaseModel):
+    hash: str
+    status: str
+    chain_id: int
+    block_number: int | None
+
+
 class JobResponse(BaseModel):
     id: str
     chain_job_id: str
@@ -61,16 +68,18 @@ class JobResponse(BaseModel):
     deadline: str
     fingerprint: str | None = None
     created_at: str
+    chain_id: int
     on_chain_state: str | None = None
     attempt_count: int = 0
     current_lease_status: str | None = None
     proof_verification_status: str | None = None
     result_available: bool = False
     result_download_endpoint: str | None = None
-    escrow_transaction: dict | None = None
-    assignment_transaction: dict | None = None
-    proof_transaction: dict | None = None
-    settlement_transaction: dict | None = None
+    escrow_transaction: ChainTransactionEvidence | None = None
+    assignment_transaction: ChainTransactionEvidence | None = None
+    proof_transaction: ChainTransactionEvidence | None = None
+    settlement_transaction: ChainTransactionEvidence | None = None
+    refund_transaction: ChainTransactionEvidence | None = None
     refund_status: str | None = None
     provider_payment_credit_status: str | None = None
     reconciliation_health: str = "pending"
@@ -209,6 +218,7 @@ def _basic_job_response(job: Job) -> JobResponse:
         deadline=job.deadline.isoformat(),
         fingerprint=job.expected_fingerprint,
         created_at=job.created_at.isoformat() if job.created_at else "",
+        chain_id=settings.CHAIN_ID,
     )
 
 
@@ -270,6 +280,7 @@ async def list_jobs(
                 deadline=j.deadline.isoformat(),
                 fingerprint=j.expected_fingerprint,
                 created_at=j.created_at.isoformat() if j.created_at else "",
+                chain_id=settings.CHAIN_ID,
             )
             for j in jobs
         ]
@@ -310,7 +321,17 @@ async def get_single_job(
     proof = None
     if attempts:
         proof = (await db.execute(select(Proof).where(Proof.job_attempt_id == attempts[-1].id))).scalar_one_or_none()
-    txs = list((await db.execute(select(ChainTransaction).where(ChainTransaction.job_id == job.id))).scalars().all())
+    txs = list(
+        (
+            await db.execute(
+                select(ChainTransaction)
+                .where(ChainTransaction.job_id == job.id)
+                .order_by(ChainTransaction.created_at, ChainTransaction.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
     escrow_tx = next((value for value in reversed(txs) if value.tx_type == "createJob"), None)
     chain_instance_id = escrow_tx.chain_instance_id if escrow_tx else None
     if chain_instance_id is not None:
@@ -343,13 +364,25 @@ async def get_single_job(
             )
         ).first()
 
-    def tx(kind: str):
+    def tx(kind: str) -> ChainTransactionEvidence | None:
         item = next((value for value in reversed(txs) if value.tx_type == kind), None)
-        return {"hash": item.tx_hash, "status": item.status} if item else None
+        return (
+            ChainTransactionEvidence(
+                hash=item.tx_hash,
+                status=item.status,
+                chain_id=item.chain_id,
+                block_number=item.block_number,
+            )
+            if item and item.tx_hash
+            else None
+        )
 
     chain_state = None
-    canonical_events = [event for event in events if event.confirmation_status in ("confirmed", "finalized")]
-    for event in sorted(canonical_events, key=lambda value: (value.block_number, value.log_index)):
+    canonical_events = sorted(
+        (event for event in events if event.confirmation_status in ("confirmed", "finalized")),
+        key=lambda value: (value.block_number, value.log_index),
+    )
+    for event in canonical_events:
         if event.event_name == "JobCreated":
             chain_state = "Created"
         elif event.event_name == "ProviderAssigned":
@@ -360,6 +393,21 @@ async def get_single_job(
             chain_state = "Settled" if event.event_data.get("valid") else "Refunded"
         elif event.event_name == "TimeoutRefundCredited":
             chain_state = "Refunded"
+    refund_payment = next((p for p in payments if p.payment_type == "user_refund"), None)
+    refund_transaction = tx("requestTimeoutRefund")
+    if refund_transaction is None and refund_payment and refund_payment.blockchain_tx_hash:
+        refund_hash = refund_payment.blockchain_tx_hash.lower()
+        refund_event = next(
+            (event for event in reversed(canonical_events) if event.transaction_hash.lower() == refund_hash),
+            None,
+        )
+        if refund_event is not None:
+            refund_transaction = ChainTransactionEvidence(
+                hash=refund_event.transaction_hash,
+                status=refund_event.confirmation_status,
+                chain_id=refund_event.chain_id,
+                block_number=refund_event.block_number,
+            )
     response = JobResponse(
         id=str(job.id),
         chain_job_id=job.chain_job_id,
@@ -369,6 +417,7 @@ async def get_single_job(
         deadline=job.deadline.isoformat(),
         fingerprint=job.expected_fingerprint,
         created_at=job.created_at.isoformat() if job.created_at else "",
+        chain_id=settings.CHAIN_ID,
         on_chain_state=chain_state,
         attempt_count=len(attempts),
         assigned_node_id=str(assigned_node.id) if assigned_node else None,
@@ -386,7 +435,8 @@ async def get_single_job(
         assignment_transaction=tx("assignProvider"),
         proof_transaction=tx("submitProof"),
         settlement_transaction=tx("verifyJob"),
-        refund_status=next((p.status for p in payments if p.payment_type == "user_refund"), None),
+        refund_transaction=refund_transaction,
+        refund_status=refund_payment.status if refund_payment else None,
         provider_payment_credit_status=next((p.status for p in payments if p.payment_type == "provider_credit"), None),
         reconciliation_health="critical_incident"
         if incident or (cursor and cursor.halted)

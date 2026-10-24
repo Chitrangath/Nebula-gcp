@@ -11,7 +11,7 @@ vi.mock('../../jobs/backend', async (importOriginal) => {
   return { ...actual, getJob: vi.fn(), getJobResult: vi.fn(), downloadJobResult: vi.fn() }
 })
 
-const job = { id: 'job-1', chain_job_id: '0xabc', model_id: 'resnet50', status: 'completed', price_base_units: '50000', deadline: '2099-01-01T00:00:00Z', fingerprint: `0x${'11'.repeat(32)}`, created_at: '2026-01-01T00:00:00Z', attempt_count: 1, result_available: true, result_download_endpoint: '/v1/jobs/job-1/result', reconciliation_health: 'match', on_chain_state: 'Settled', proof_verification_status: 'valid', escrow_transaction: { hash: `0x${'aa'.repeat(32)}`, status: 'confirmed' }, settlement_transaction: { hash: `0x${'bb'.repeat(32)}`, status: 'confirmed' }, assignment_transaction: null, proof_transaction: null, refund_status: null, provider_payment_credit_status: 'completed' }
+const job = { id: 'job-1', chain_job_id: '0xabc', chain_id: 421614, model_id: 'resnet50', status: 'completed', price_base_units: '50000', deadline: '2099-01-01T00:00:00Z', fingerprint: `0x${'11'.repeat(32)}`, created_at: '2026-01-01T00:00:00Z', attempt_count: 1, result_available: true, result_download_endpoint: '/v1/jobs/job-1/result', reconciliation_health: 'match', on_chain_state: 'Settled', proof_verification_status: 'valid', escrow_transaction: { hash: `0x${'aa'.repeat(32)}`, status: 'confirmed', chain_id: 421614, block_number: 322000001 }, settlement_transaction: { hash: `0x${'bb'.repeat(32)}`, status: 'confirmed', chain_id: 421614, block_number: 322000004 }, assignment_transaction: { hash: `0x${'cc'.repeat(32)}`, status: 'confirmed', chain_id: 421614, block_number: 322000002 }, proof_transaction: { hash: `0x${'dd'.repeat(32)}`, status: 'confirmed', chain_id: 421614, block_number: 322000003 }, refund_transaction: null, refund_status: null, provider_payment_credit_status: 'credited' }
 
 describe('JobDetail', () => {
   afterEach(() => { cleanup(); vi.clearAllMocks() })
@@ -34,7 +34,11 @@ describe('JobDetail', () => {
 
     expect(await screen.findByText('resnet50')).toBeInTheDocument()
     expect(screen.getByText('valid')).toBeInTheDocument()
+    expect(screen.getByText('Chain ID 421614')).toBeInTheDocument()
+    expect(screen.getByText('credited')).toBeInTheDocument()
+    expect(screen.getByText('322000003')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /escrow transaction/i })).toHaveAttribute('href', expect.stringContaining(job.escrow_transaction.hash))
+    expect(screen.getByRole('link', { name: /proof transaction/i })).toHaveAttribute('href', expect.stringContaining(job.proof_transaction.hash))
     await userEvent.click(screen.getByRole('button', { name: 'Download result' }))
     expect(downloadJobResult).toHaveBeenCalledWith('job-1', expect.any(AbortSignal))
     expect(createUrl).toHaveBeenCalledWith(expect.any(Blob))
@@ -78,5 +82,34 @@ describe('JobDetail', () => {
       expect(screen.getByLabelText('Job lifecycle')).toHaveTextContent('Escrow confirmed')
       expect(screen.getByLabelText('Job lifecycle')).not.toHaveTextContent('Escrow pending')
     }
+  })
+
+  it('shows authoritative refund evidence with an explorer link', async () => {
+    const refundHash = `0x${'ee'.repeat(32)}`
+    vi.mocked(getJob).mockResolvedValue({
+      ...job,
+      status: 'refunded',
+      on_chain_state: 'Refunded',
+      result_available: false,
+      provider_payment_credit_status: null,
+      refund_status: 'credited',
+      refund_transaction: { hash: refundHash, status: 'finalized', chain_id: 421614, block_number: 322000005 },
+    })
+    render(<MemoryRouter initialEntries={['/user/jobs/job-1']}><Routes><Route path="/user/jobs/:id" element={<JobDetail />} /></Routes></MemoryRouter>)
+
+    expect(await screen.findByRole('link', { name: /refund transaction/i })).toHaveAttribute('href', expect.stringContaining(refundHash))
+    expect(screen.getByText('322000005')).toBeInTheDocument()
+    expect(screen.getByText('credited')).toBeInTheDocument()
+  })
+
+  it('does not link transaction evidence observed on a different chain', async () => {
+    vi.mocked(getJob).mockResolvedValue({
+      ...job,
+      escrow_transaction: { ...job.escrow_transaction, chain_id: 1 },
+    })
+    render(<MemoryRouter initialEntries={['/user/jobs/job-1']}><Routes><Route path="/user/jobs/:id" element={<JobDetail />} /></Routes></MemoryRouter>)
+
+    expect(await screen.findByText('Chain ID 421614')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /escrow transaction/i })).not.toBeInTheDocument()
   })
 })

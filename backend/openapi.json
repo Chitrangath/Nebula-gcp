@@ -67,6 +67,41 @@
         "title": "Body_create_new_job_v1_jobs_post",
         "type": "object"
       },
+      "ChainTransactionEvidence": {
+        "properties": {
+          "block_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Number"
+          },
+          "chain_id": {
+            "title": "Chain Id",
+            "type": "integer"
+          },
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hash",
+          "status",
+          "chain_id",
+          "block_number"
+        ],
+        "title": "ChainTransactionEvidence",
+        "type": "object"
+      },
       "ChallengeRequest": {
         "properties": {
           "wallet_address": {
@@ -497,18 +532,20 @@
           "assignment_transaction": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/ChainTransactionEvidence"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Assignment Transaction"
+            ]
           },
           "attempt_count": {
             "default": 0,
             "title": "Attempt Count",
+            "type": "integer"
+          },
+          "chain_id": {
+            "title": "Chain Id",
             "type": "integer"
           },
           "chain_job_id": {
@@ -548,14 +585,12 @@
           "escrow_transaction": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/ChainTransactionEvidence"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Escrow Transaction"
+            ]
           },
           "fingerprint": {
             "anyOf": [
@@ -594,14 +629,12 @@
           "proof_transaction": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/ChainTransactionEvidence"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Proof Transaction"
+            ]
           },
           "proof_verification_status": {
             "anyOf": [
@@ -641,6 +674,16 @@
             ],
             "title": "Refund Status"
           },
+          "refund_transaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChainTransactionEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "result_available": {
             "default": false,
             "title": "Result Available",
@@ -660,14 +703,12 @@
           "settlement_transaction": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/ChainTransactionEvidence"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Settlement Transaction"
+            ]
           },
           "started_at": {
             "anyOf": [
@@ -692,7 +733,8 @@
           "status",
           "price_base_units",
           "deadline",
-          "created_at"
+          "created_at",
+          "chain_id"
         ],
         "title": "JobResponse",
         "type": "object"

@@ -68,6 +68,8 @@ The contract, backend, R2, and Arbitrum Sepolia deployment already exist. No con
 
 ### DEMO-006 — Proof, escrow, and payment evidence (3h)
 
+**Implementation status:** complete and browser-contract verified. Public Arbitrum Sepolia reconciliation remains part of the production DEMO-008 run.
+
 - Add explorer links for escrow, assignment, proof, settlement, and refund transactions.
 - Show proof fingerprint, verification status, chain ID, block number, and provider credit status.
 - Ensure UI values come from authoritative backend/chain responses, not optimistic placeholders.

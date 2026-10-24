@@ -5,9 +5,46 @@ import { downloadJobResult, getJobResult, probabilityFromHexFloat, type JobResul
 import { useJobLifecycle, type Job } from '../../jobs/lifecycle'
 import { ARBITRUM_SEPOLIA_EXPLORER } from '../../utils/constants'
 
-function explorerLink(value: unknown): string | null {
-  if (!value || typeof value !== 'object' || !('hash' in value) || typeof value.hash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(value.hash)) return null
-  return `${ARBITRUM_SEPOLIA_EXPLORER}/tx/${value.hash}`
+interface TransactionEvidence {
+  hash: string
+  status: string
+  chain_id: number
+  block_number: number | null
+}
+
+function transactionEvidence(value: unknown): TransactionEvidence | null {
+  if (!value || typeof value !== 'object') return null
+  const evidence = value as Record<string, unknown>
+  if (typeof evidence.hash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(evidence.hash) ||
+      typeof evidence.status !== 'string' || typeof evidence.chain_id !== 'number' ||
+      !Number.isSafeInteger(evidence.chain_id) || evidence.chain_id <= 0 ||
+      (evidence.block_number !== null && (typeof evidence.block_number !== 'number' ||
+        !Number.isSafeInteger(evidence.block_number) || evidence.block_number < 0))) return null
+  return evidence as unknown as TransactionEvidence
+}
+
+function ChainEvidence({ job }: { job: Job }) {
+  const transactions = [
+    ['Escrow transaction', job.escrow_transaction],
+    ['Assignment transaction', job.assignment_transaction],
+    ['Proof transaction', job.proof_transaction],
+    ['Settlement transaction', job.settlement_transaction],
+    ['Refund transaction', job.refund_transaction],
+  ].flatMap(([label, value]) => {
+    const evidence = transactionEvidence(value)
+    return evidence?.chain_id === job.chain_id ? [{ label: String(label), evidence }] : []
+  })
+  return <section aria-labelledby="chain-evidence-heading" className="mt-6 rounded-xl border border-gray-200 bg-white p-5">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div><h2 id="chain-evidence-heading" className="text-lg font-semibold text-gray-900">Arbitrum Sepolia evidence</h2><p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600">These values are observed by the backend from the configured chain. Open any transaction independently in Arbiscan.</p></div>
+      <span className="rounded-full border border-primary-200 bg-primary-50 px-3 py-1 font-mono text-sm font-semibold text-primary-900">Chain ID {job.chain_id}</span>
+    </div>
+    {transactions.length > 0 ? <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{transactions.map(({ label, evidence }) => <article key={label} className="min-w-0 rounded-lg border border-gray-200 bg-gray-50 p-4">
+      <h3 className="font-semibold text-gray-900">{label}</h3>
+      <dl className="mt-3 grid grid-cols-2 gap-2 text-sm"><div><dt className="text-gray-600">Status</dt><dd className="font-medium">{evidence.status}</dd></div><div><dt className="text-gray-600">Block number</dt><dd className="font-mono font-medium">{evidence.block_number ?? 'Pending'}</dd></div></dl>
+      <a href={`${ARBITRUM_SEPOLIA_EXPLORER}/tx/${evidence.hash}`} target="_blank" rel="noreferrer" className="mt-3 inline-flex min-h-11 items-center font-semibold text-primary-700 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2">Open {label.toLowerCase()} in Arbiscan</a>
+    </article>)}</div> : <p className="mt-4 text-sm text-gray-600">No chain transaction has been observed for this job yet.</p>}
+  </section>
 }
 
 function Lifecycle({ job }: { job: Job }) {
@@ -112,10 +149,12 @@ export default function JobDetail() {
       <dl className="mt-6 grid gap-4 rounded-xl border border-gray-200 bg-white p-5 sm:grid-cols-2">
         <div><dt className="text-sm text-gray-600">On-chain state</dt><dd className="font-medium">{job.on_chain_state ?? 'Pending'}</dd></div>
         <div><dt className="text-sm text-gray-600">Proof verification</dt><dd className="font-medium">{job.proof_verification_status ?? 'Pending'}</dd></div>
+        <div><dt className="text-sm text-gray-600">Provider credit</dt><dd className="font-medium">{job.provider_payment_credit_status ?? 'Not credited'}</dd></div>
+        <div><dt className="text-sm text-gray-600">User refund</dt><dd className="font-medium">{job.refund_status ?? 'Not credited'}</dd></div>
         <div><dt className="text-sm text-gray-600">Attempts</dt><dd className="font-medium">{job.attempt_count}</dd></div>
         <div className="min-w-0"><dt className="text-sm text-gray-600">Fingerprint</dt><dd className="font-mono text-sm [overflow-wrap:anywhere]">{job.fingerprint ?? 'Pending'}</dd></div>
       </dl>
-      <div className="mt-6 flex flex-wrap gap-4">{([['Escrow transaction', job.escrow_transaction], ['Assignment transaction', job.assignment_transaction], ['Proof transaction', job.proof_transaction], ['Settlement transaction', job.settlement_transaction]] as Array<[string, unknown]>).map(([label, value]) => { const href = explorerLink(value); return href ? <a key={label} href={href} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center font-semibold text-primary-700 underline underline-offset-4">{label}</a> : null })}</div>
+      <ChainEvidence job={job} />
       {canAccessResult ? <button type="button" onClick={() => void download()} disabled={downloading} className="mt-5 min-h-11 rounded-lg bg-primary-600 px-5 py-3 font-semibold text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-50">{downloading ? 'Preparing result…' : 'Download result'}</button> : null}
       <p className="mt-6"><Link to="/user/dashboard" className="inline-flex min-h-11 items-center font-semibold text-primary-700 underline underline-offset-4">Back to jobs</Link></p>
     </> : null}
