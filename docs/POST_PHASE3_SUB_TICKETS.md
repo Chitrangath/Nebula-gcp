@@ -386,9 +386,11 @@ is definitive where the diagram is intentionally simplified.
 
 ### QA-002 — Application and protocol security closure
 
-- State: `BLOCKED`
+- State: `DONE` (security-focused backend/frontend tests, secret/configure checks,
+  Foundry adversarial/invariant suite, and independent threat-model review passed)
 - Actor: `AGENT`
 - Depends on: QA-001
+- Evidence: `docs/QA002_SECURITY_CLOSURE_REPORT.md`.
 - Outcome: execute and document roadmap section 12.2 threat tests and reviews.
 - Deliverables: OWASP browser/API model; injection/XSS/upload/auth/CORS/CSRF/key
   lifecycle/role separation/RPC/storage/dependency/container/secret tests;
