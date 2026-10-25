@@ -17,6 +17,22 @@ export function isDefinitivelyDropped(transactionFound: boolean, pendingNonce: n
   return !transactionFound && pendingNonce <= submittedNonce
 }
 
+/**
+ * Build a fresh EIP-1559 fee cap immediately before broadcasting. MetaMask's
+ * cached fee suggestion can be a few milliseconds behind Arbitrum's current
+ * base fee, which causes `max fee per gas less than block base fee` before the
+ * transaction ever reaches the contract.
+ */
+async function currentFeeOverrides(publicClient: ReturnType<typeof createPublicClient>) {
+  const block = await publicClient.getBlock()
+  const baseFee = block.baseFeePerGas ?? await publicClient.getGasPrice()
+  const priority = 100_000n // 0.0001 gwei; Arbitrum's sequencer needs no tip premium.
+  return {
+    maxPriorityFeePerGas: priority,
+    maxFeePerGas: baseFee * 2n + priority,
+  }
+}
+
 function paymentAddress(): Address {
   if (!/^0x[0-9a-fA-F]{40}$/.test(CONTRACT_ADDRESS)) throw new Error('Nebula payment contract is not configured')
   return CONTRACT_ADDRESS as Address
@@ -74,7 +90,8 @@ export function createInjectedChainGateway(provider: Eip1193Provider): ChainGate
       const token = await publicClient.readContract({ address, abi, functionName: 'token' }) as Address
       const nonce = await publicClient.getTransactionCount({ address: owner, blockTag: 'pending' })
       try {
-        const hash = await walletClient.writeContract({ account: owner, chain: arbitrumSepolia, address: token, abi: erc20Abi, functionName: 'approve', args: [address, amount], nonce })
+        const fee = await currentFeeOverrides(publicClient)
+        const hash = await walletClient.writeContract({ account: owner, chain: arbitrumSepolia, address: token, abi: erc20Abi, functionName: 'approve', args: [address, amount], nonce, ...fee })
         submittedTransactions.set(hash, { account: owner, nonce })
         return hash
       } catch (error) {
@@ -86,7 +103,8 @@ export function createInjectedChainGateway(provider: Eip1193Provider): ChainGate
       const owner = await account(signal)
       const nonce = await publicClient.getTransactionCount({ address: owner, blockTag: 'pending' })
       try {
-        const hash = await walletClient.writeContract({ account: owner, chain: arbitrumSepolia, address, abi, functionName: 'createJob', args: [chainJobId, fingerprint], nonce })
+        const fee = await currentFeeOverrides(publicClient)
+        const hash = await walletClient.writeContract({ account: owner, chain: arbitrumSepolia, address, abi, functionName: 'createJob', args: [chainJobId, fingerprint], nonce, ...fee })
         submittedTransactions.set(hash, { account: owner, nonce })
         return hash
       } catch (error) {
