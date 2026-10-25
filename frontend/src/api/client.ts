@@ -30,7 +30,9 @@ async function fetchApi(path: string, init: RequestInit): Promise<Response> {
   const token = getAccessToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
   try {
-    return await fetch(`${API_BASE_URL}${path}`, { ...init, credentials: 'same-origin', headers })
+    // The deployed frontend and Cloud Run API are different origins. Include
+    // the refresh-token cookie so a page reload can restore the access token.
+    return await fetch(`${API_BASE_URL}${path}`, { ...init, credentials: 'include', headers })
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error
     throw new ApiUnavailableError()

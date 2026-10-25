@@ -49,6 +49,21 @@ export async function connectInjectedWallet(provider: Eip1193Provider): Promise<
   }
 }
 
+/** Restore an already-authorized wallet without opening a wallet popup. */
+export async function restoreInjectedWallet(provider: Eip1193Provider): Promise<ConnectedWallet | null> {
+  try {
+    const accounts = (await provider.request({ method: 'eth_accounts' })) as unknown[]
+    const address = accounts[0]
+    if (typeof address !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(address)) return null
+    const chainValue = await provider.request({ method: 'eth_chainId' })
+    const chainId = Number.parseInt(String(chainValue), 16)
+    if (chainId !== ARBITRUM_SEPOLIA_CHAIN_ID) return null
+    return { address: address.toLowerCase() as `0x${string}`, chainId }
+  } catch {
+    return null
+  }
+}
+
 export function subscribeToWalletInvalidation(provider: Eip1193Provider, invalidate: () => void): () => void {
   const onAccountsChanged = () => invalidate()
   const onChainChanged = () => invalidate()

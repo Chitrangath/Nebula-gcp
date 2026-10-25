@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { ApiUnavailableError } from '../api/client'
-import { authenticateWallet } from '../api/auth'
+import { authenticateWallet, restoreWalletSession } from '../api/auth'
 import { invalidateSession } from '../api/session'
 import {
   subscribeToWalletInvalidation,
@@ -34,13 +34,22 @@ export default function WalletConnect({ provider = window.ethereum }: WalletConn
 
   useEffect(() => {
     if (!provider) return
-    return subscribeToWalletInvalidation(provider, () => {
+    const controller = new AbortController()
+    void restoreWalletSession(provider, controller.signal).then((restored) => {
+      if (restored && !controller.signal.aborted) setWallet(restored)
+    })
+    const unsubscribe = subscribeToWalletInvalidation(provider, () => {
+      controller.abort()
       requestController.current?.abort()
       invalidateSession()
       setWallet(null)
       setConnecting(false)
       setError(null)
     })
+    return () => {
+      controller.abort()
+      unsubscribe()
+    }
   }, [provider])
 
   useEffect(() => () => requestController.current?.abort(), [])

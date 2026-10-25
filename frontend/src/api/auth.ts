@@ -1,7 +1,7 @@
 import type { components } from './schema'
 import { requestApi } from './client'
 import { enableSessionRefresh, getAccessToken, invalidateSession, setAccessToken, setAuthenticatedWallet } from './session'
-import { connectInjectedWallet, type ConnectedWallet, type Eip1193Provider } from '../wallet/wallet'
+import { connectInjectedWallet, restoreInjectedWallet, type ConnectedWallet, type Eip1193Provider } from '../wallet/wallet'
 
 export type AuthChallenge = components['schemas']['ChallengeResponse']
 type ChallengeRequest = components['schemas']['ChallengeRequest']
@@ -38,6 +38,20 @@ export async function authenticateWallet(provider: Eip1193Provider, signal?: Abo
   setAuthenticatedWallet(wallet.address)
   enableSessionRefresh()
   return wallet
+}
+
+export async function restoreWalletSession(provider: Eip1193Provider, signal?: AbortSignal): Promise<ConnectedWallet | null> {
+  const wallet = await restoreInjectedWallet(provider)
+  if (!wallet) return null
+  try {
+    const response = await requestApi<VerifyResponse>('/auth/refresh', { method: 'POST', signal }, false)
+    setAccessToken(response.access_token)
+    setAuthenticatedWallet(wallet.address)
+    enableSessionRefresh()
+    return wallet
+  } catch {
+    return null
+  }
 }
 
 export async function logout(signal?: AbortSignal): Promise<void> {
