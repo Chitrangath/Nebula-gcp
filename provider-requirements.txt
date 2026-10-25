@@ -1,0 +1,43 @@
+# Nebula provider machine requirements
+#
+# This file is a checklist for the automated bootstrap script:
+#   ./scripts/provider_wsl_bootstrap.sh
+#
+# It is not a pip requirements file. Python packages are installed from the
+# pinned Worker files under worker/ after the host checks pass.
+
+[host]
+os = Ubuntu 22.04+ in WSL2 (Linux x86_64)
+gpu = NVIDIA CUDA-capable GPU (RTX 5050 or compatible)
+driver = Current Windows NVIDIA driver with WSL2 CUDA support
+memory = 8 GB system RAM recommended
+disk = 12 GB free space recommended for environment, cache, and artifacts
+network = HTTPS access to GitHub, Cloud Run API, and private model storage
+
+[required_commands]
+commands = git, curl, ca-certificates, python3, nvidia-smi
+
+[python]
+version = Python 3.12 recommended (Python 3.10+ supported by the project)
+environment = worker/.venv
+requirements = worker/requirements-cu128.txt
+
+[provider_runtime]
+backend_url = https://nebula-api-93573724992.asia-south1.run.app
+chain_id = 421614
+executor_adapter = multimodel
+executor_device = cuda
+models = resnet50, bert-base
+
+[human_values]
+provider_wallet = Connect in the public dApp
+node_id = Returned after provider node registration
+node_api_key = Displayed once after node registration or credential rotation
+worker_signer_address = Public address for this node's signer key
+worker_signer_private_key = Store only on the provider machine; never commit or share
+approved_model_url = Owner-approved immutable ResNet50 artifact URL
+
+[security]
+config_permissions = 600
+private_key_storage = local protected configuration only
+production_secrets = never place in Git, browser storage, URLs, or chat
