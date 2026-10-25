@@ -24,9 +24,15 @@ class Settings(BaseSettings):
     DEMO_VERIFIER_NODE_ID: str = ""
     CONFIRMATION_DEPTH: int = 1
     FINALITY_DEPTH: int = 10
-    EVENT_BLOCK_RANGE: int = 500
+    # Alchemy's free Arbitrum tier rejects eth_getLogs ranges larger than
+    # 10 blocks.  Keep the safe default small; operators with a higher tier
+    # may override it explicitly in the environment.
+    EVENT_BLOCK_RANGE: int = 10
     EVENT_OVERLAP_BLOCKS: int = 2
     RUNNER_POLL_INTERVAL_SECONDS: float = 2.0
+    # A transient RPC/database failure must not permanently kill an owner
+    # runner.  The next cycle retries after this bounded backoff.
+    RUNNER_ERROR_BACKOFF_SECONDS: float = 5.0
     RUNNER_BATCH_SIZE: int = 25
     PROOF_CLAIM_TTL_SECONDS: int = 300
     NODE_HEARTBEAT_TTL_SECONDS: int = 90

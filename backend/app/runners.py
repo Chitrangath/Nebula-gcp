@@ -13,7 +13,7 @@ from app.config import settings
 from app.database import async_session
 from app.models import ChainTransaction, Lease
 from app.services.assignment_dispatcher import AssignmentDispatcher
-from app.services.blockchain_events import EventPoller, reconcile_job_state
+from app.services.blockchain_events import CriticalReconciliationError, EventPoller, reconcile_job_state
 from app.services.blockchain_service import Web3Backend
 from app.services.chain_outbox import get_chain_instance_id
 from app.services.escrow_confirmation import ReceiptConfirmer
@@ -121,25 +121,42 @@ async def run(name: str, once: bool) -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stopped.set)
     while not stopped.is_set():
-        if name == "receipts":
-            async with async_session() as db:
-                result = await receipt_confirmer.run_once(db)
-        elif name == "assignment":
-            result = await assignment_once(dispatcher)
-        elif name == "settlement":
-            async with async_session() as db:
-                result = await settlement.run_once(db)
-        elif name == "events":
-            async with async_session() as db:
-                result = await poller.run_once(db)
-                await db.commit()
-        else:
-            result = {"reconciled": await reconciliation_once()}
-        logger.info("runner_cycle name=%s result=%s", name, result)
+        try:
+            if name == "receipts":
+                async with async_session() as db:
+                    result = await receipt_confirmer.run_once(db)
+            elif name == "assignment":
+                result = await assignment_once(dispatcher)
+            elif name == "settlement":
+                async with async_session() as db:
+                    result = await settlement.run_once(db)
+            elif name == "events":
+                async with async_session() as db:
+                    result = await poller.run_once(db)
+                    await db.commit()
+            else:
+                result = {"reconciled": await reconciliation_once()}
+        except asyncio.CancelledError:
+            raise
+        except CriticalReconciliationError:
+            # A finalized-history divergence is a safety stop, not a
+            # transient outage.  Preserve the existing fail-closed behavior.
+            logger.exception("runner_critical_reconciliation_failure name=%s", name)
+            raise
+        except Exception:
+            # RPC providers, database connections, and object storage can all
+            # fail transiently.  A child process that exits here leaves jobs
+            # stuck forever (most visibly in `settling`).  Keep the runner
+            # alive and retry; the session context has already rolled back.
+            logger.exception("runner_cycle_failed name=%s; retrying", name)
+            result = None
+        if result is not None:
+            logger.info("runner_cycle name=%s result=%s", name, result)
         if once:
             return
         try:
-            await asyncio.wait_for(stopped.wait(), settings.RUNNER_POLL_INTERVAL_SECONDS)
+            delay = settings.RUNNER_POLL_INTERVAL_SECONDS if result is not None else settings.RUNNER_ERROR_BACKOFF_SECONDS
+            await asyncio.wait_for(stopped.wait(), delay)
         except TimeoutError:
             pass
 
