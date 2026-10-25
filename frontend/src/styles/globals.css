@@ -135,6 +135,7 @@ a, button { -webkit-tap-highlight-color: transparent; }
   .nebula-chain-chip { display: none; }
   .nebula-hero { min-height: 430px; }
   .nebula-orbit { width: 260px; right: -95px; top: 25%; opacity: .36; }
+  .nebula-orbit-point { display: none; }
   .nebula-feature-grid { grid-template-columns: 1fr; }
   .nebula-metric-grid { grid-template-columns: 1fr; }
   .nebula-job-date { display: none; }

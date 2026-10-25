@@ -39,7 +39,12 @@ export default function SubmitJob({ models: suppliedModels, backend = jobBackend
   const [review, setReview] = useState<FundingSnapshot | null>(null)
   const checkpoint = useRef<SubmissionCheckpoint | null>(null)
   const controller = useRef<AbortController | null>(null)
-  const chain = useMemo(() => suppliedChain ?? (window.ethereum ? createInjectedChainGateway(window.ethereum) : null), [suppliedChain])
+  const [chain, chainError] = useMemo((): [ChainGateway | null, string | null] => {
+    if (suppliedChain) return [suppliedChain, null]
+    if (!window.ethereum) return [null, null]
+    try { return [createInjectedChainGateway(window.ethereum), null] }
+    catch (caught) { return [null, caught instanceof Error ? caught.message : 'Payment contract configuration is unavailable'] }
+  }, [suppliedChain])
   const selectedModel = models.find((model) => model.id === modelId)
 
   useEffect(() => {
@@ -71,7 +76,7 @@ export default function SubmitJob({ models: suppliedModels, backend = jobBackend
       setError(selectedModel.input_type === 'text' ? 'Choose a supported text input' : 'Choose a supported JPEG or PNG input')
       return
     }
-    if (!chain) { setError('Connect an Arbitrum Sepolia wallet before funding a job'); return }
+    if (!chain) { setError(chainError ?? 'Connect an Arbitrum Sepolia wallet before funding a job'); return }
     const activeAuthenticatedWallet = authenticatedWallet === undefined ? getAuthenticatedWallet() : authenticatedWallet
     if (!review) {
       controller.current?.abort()
@@ -139,8 +144,8 @@ export default function SubmitJob({ models: suppliedModels, backend = jobBackend
           <div><dt className="font-medium">Exact escrow amount</dt><dd>{review.jobPrice.toString()} base units</dd></div>
           <div><dt className="font-medium">Estimated gas reserve</dt><dd>{review.requiredNativeBalance.toString()} wei</dd></div>
         </dl> : null}
-        {error ? <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800"><p className="font-semibold">The job was not submitted</p><p className="mt-1 text-sm">{error}</p></div> : null}
-        <button type="submit" disabled={stage !== null || submittedJobId !== null || models.length === 0} className="min-h-11 rounded-lg bg-primary-600 px-5 py-3 font-semibold text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
+        {error || chainError ? <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800"><p className="font-semibold">{chainError ? 'Job submission unavailable' : 'The job was not submitted'}</p><p className="mt-1 text-sm">{chainError ?? error}</p></div> : null}
+        <button type="submit" disabled={stage !== null || submittedJobId !== null || models.length === 0 || chainError !== null} className="min-h-11 rounded-lg bg-primary-600 px-5 py-3 font-semibold text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
           {stage ? stageLabels[stage] : error && checkpoint.current ? 'Retry submission' : review ? 'Confirm upload and sign' : 'Review funding'}
         </button>
       </form>

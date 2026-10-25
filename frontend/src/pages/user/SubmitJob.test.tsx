@@ -27,7 +27,16 @@ function dependencies() {
 }
 
 describe('SubmitJob', () => {
-  afterEach(cleanup)
+  afterEach(() => { cleanup(); delete window.ethereum })
+
+  it('keeps the submission page usable when the payment contract is not configured', async () => {
+    window.ethereum = { request: vi.fn() }
+    render(<MemoryRouter><SubmitJob models={[model]} /></MemoryRouter>)
+
+    expect(screen.getByRole('heading', { name: 'Submit an inference job' })).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('Nebula payment contract is not configured')
+    expect(screen.getByRole('button', { name: 'Review funding' })).toBeDisabled()
+  })
 
   it('shows the signing summary and completes the ResNet escrow journey', async () => {
     const deps = dependencies()

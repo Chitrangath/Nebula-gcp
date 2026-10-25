@@ -42,3 +42,17 @@ The repository inventory contains: `ask-matt`, `banner-design`, `brand`, `code-r
 ## Remaining acceptance
 
 Deploying these frontend files and checking wallet restoration, job submission, node registration, job detail, and provider withdrawal in the deployed environment remain separate acceptance steps. This phase does not assert those live flows have been rechecked after the visual change.
+
+## Post-commit redesign verification — 2026-10-25
+
+- `npm run test`: 80 passed across 16 files, including a new missing-contract regression test.
+- `npm run lint`: passed.
+- `npm run build`: passed after regenerating the stale OpenAPI source-hash manifest. The OpenAPI JSON and generated browser types did not change.
+- Production-build Chromium smoke: all seven routes returned 200 and rendered a main heading at 1440 px and 375 px; no page exceptions or horizontal overflow. Mobile navigation opened, followed its link, and closed.
+- Screenshot inspection found decorative orbit points crossing the mobile hero heading. The points are now hidden below 620 px; a rebuilt Chromium screenshot confirms the heading is clear.
+- With an isolated local API and a test wallet, Chromium completed wallet sign-in, restored the session after reload, and loaded the authenticated network view. The submit route then exposed a missing `VITE_CONTRACT_ADDRESS` in this local build: gateway construction threw during render. It now shows an accessible configuration alert, disables funding, and stays usable. A rebuilt browser smoke confirmed the alert and zero page exceptions.
+- The existing large JavaScript chunk warning remains. No change to wallet, API, contract, route, or generated type behavior was required.
+
+For this verification phase, all skills in the inventory above were rechecked. `custom-ui-nebula` guided preservation of the application boundary, `ui-ux-pro-max` guided the responsive and accessibility checks, `diagnosing-bugs` guided the reproducible build and screenshot checks, and `tdd` supplied the existing component test gates. No other skill was needed for this local frontend check.
+
+The newly built frontend was tested locally; the deployed Vercel frontend still needs a deployment and browser acceptance for this redesign.
