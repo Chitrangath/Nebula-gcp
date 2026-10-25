@@ -155,7 +155,11 @@ async def run(name: str, once: bool) -> None:
         if once:
             return
         try:
-            delay = settings.RUNNER_POLL_INTERVAL_SECONDS if result is not None else settings.RUNNER_ERROR_BACKOFF_SECONDS
+            delay = (
+                settings.RUNNER_POLL_INTERVAL_SECONDS
+                if result is not None
+                else settings.RUNNER_ERROR_BACKOFF_SECONDS
+            )
             await asyncio.wait_for(stopped.wait(), delay)
         except TimeoutError:
             pass

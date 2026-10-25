@@ -59,7 +59,7 @@ function NodeCard({ node }: { node: NetworkNode }) {
     <div className="mt-5 grid gap-3 sm:grid-cols-2">
       <section className="min-w-0 rounded-lg border border-gray-200 bg-gray-50 p-4">
         <h3 className="text-sm font-semibold text-gray-950">Current lease</h3>
-        {node.active_lease ? <><p className="mt-2 font-medium text-gray-950">{modelName(node.active_lease.model_id)} · {node.active_lease.status}</p><p className="mt-1 font-mono text-xs text-gray-600 [overflow-wrap:anywhere]">{node.active_lease.chain_job_id}</p><p className="mt-2 text-xs text-gray-600">Expires {new Date(node.active_lease.expires_at).toLocaleString()}</p></> : <p className="mt-2 text-sm text-gray-600">Available for compatible work.</p>}
+        {node.active_lease ? <><p className="mt-2 font-medium text-gray-950">{modelName(node.active_lease.model_id)} · {node.active_lease.status}</p><p className="mt-1 font-mono text-xs text-gray-600 [overflow-wrap:anywhere]">{node.active_lease.chain_job_id}</p><p className="mt-2 text-xs text-gray-600">Expires {new Date(node.active_lease.expires_at).toLocaleString()}</p></> : <p className="mt-2 text-sm text-gray-600">No active lease observed.</p>}
       </section>
       <section className="min-w-0 rounded-lg border border-gray-200 bg-gray-50 p-4">
         <h3 className="text-sm font-semibold text-gray-950">Last completed job</h3>
@@ -99,28 +99,28 @@ export default function Network() {
   const onlineCount = snapshot?.nodes.filter((node) => node.status === 'online').length ?? 0
   const activeLeaseCount = snapshot?.nodes.filter((node) => node.active_lease !== null).length ?? 0
 
-  return <main className="mx-auto max-w-6xl">
+  return <div className="nebula-workspace nebula-network-page">
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div>
-        <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-primary-700">Three-device demonstration</p>
+        <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-primary-700">Infrastructure / observed state</p>
         <h1 className="text-3xl font-bold tracking-tight text-gray-950">Live compute network</h1>
-        <p className="mt-2 max-w-3xl leading-6 text-gray-600">Watch the connected AI user, independent GPU providers, model compatibility, and lease activity from one authenticated view.</p>
+        <p className="mt-2 max-w-3xl leading-6 text-gray-600">Inspect registered GPU nodes, model compatibility, heartbeat health, and lease activity from one authenticated view.</p>
       </div>
       <button type="button" disabled={loading} onClick={() => setRevision((current) => current + 1)} className="inline-flex min-h-11 items-center rounded-lg border border-primary-600 bg-white px-5 py-3 font-semibold text-primary-700 hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-50">{loading ? 'Refreshing…' : 'Refresh network'}</button>
     </div>
 
-    {error ? <div role="alert" className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-900"><p>{error}</p><button type="button" onClick={() => setRevision((current) => current + 1)} className="mt-2 min-h-11 font-semibold underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-red-700 focus:ring-offset-2">Retry network</button></div> : null}
+    {error ? <div role="alert" className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-900"><p>{error}</p>{snapshot ? <p className="mt-1 text-sm">Showing last observed network data. Current node status may have changed.</p> : null}<button type="button" onClick={() => setRevision((current) => current + 1)} className="mt-2 min-h-11 font-semibold underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-red-700 focus:ring-offset-2">Retry network</button></div> : null}
     {loading && !snapshot ? <p role="status" className="mt-8 text-gray-700">Loading live network state…</p> : null}
 
     {snapshot ? <>
-      <p className="mt-6 text-sm text-gray-600">Network observed at {new Date(snapshot.observed_at).toLocaleTimeString()} · {snapshot.nodes.length + 1} connected devices represented</p>
+      <p className="mt-6 text-sm text-gray-600">Network observed at {new Date(snapshot.observed_at).toLocaleTimeString()} · {snapshot.nodes.length} registered GPU nodes</p>
       <p role="status" aria-atomic="true" className="sr-only">{onlineCount} of {snapshot.nodes.length} GPU nodes online; {activeLeaseCount} active leases.</p>
       <section aria-label="Network summary" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {[['Connected devices', snapshot.nodes.length + 1], ['Online GPU nodes', onlineCount], ['Active leases', activeLeaseCount], ['Chain ID', snapshot.chain_id]].map(([label, value]) => <div key={label} className="rounded-xl border border-gray-200 bg-white p-4"><p className="text-sm text-gray-600">{label}</p><p className="mt-1 font-mono text-2xl font-bold text-gray-950">{value}</p></div>)}
+        {[['GPU nodes registered', snapshot.nodes.length], ['Online GPU nodes', onlineCount], ['Active leases', activeLeaseCount], ['Chain ID', snapshot.chain_id]].map(([label, value]) => <div key={label} className="rounded-xl border border-gray-200 bg-white p-4"><p className="text-sm text-gray-600">{label}</p><p className="mt-1 font-mono text-2xl font-bold text-gray-950">{value}</p></div>)}
       </section>
 
       <section aria-label="Connected browser" className="mt-6 rounded-xl border border-primary-200 bg-primary-50 p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-primary-700">Connected browser</p><h2 className="mt-1 text-xl font-bold text-gray-950">Device A · {roleName(snapshot.viewer.role)}</h2></div><span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900">Authenticated</span></div>
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-primary-700">Connected browser</p><h2 className="mt-1 text-xl font-bold text-gray-950">This browser · {roleName(snapshot.viewer.role)}</h2></div><span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900">Authenticated</span></div>
         <p className="mt-3 font-mono text-sm [overflow-wrap:anywhere]">{snapshot.viewer.wallet_address}</p>
       </section>
 
@@ -134,5 +134,5 @@ export default function Network() {
         {snapshot.nodes.length > 0 ? <div className="mt-4 grid gap-4 lg:grid-cols-2">{snapshot.nodes.map((node) => <NodeCard key={node.id} node={node} />)}</div> : <div className="mt-4 rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center"><h3 className="font-semibold text-gray-950">No GPU nodes registered</h3><p className="mt-2 text-gray-600">Register and start a provider Worker to make it visible here.</p></div>}
       </section>
     </> : null}
-  </main>
+  </div>
 }

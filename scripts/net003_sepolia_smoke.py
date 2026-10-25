@@ -214,6 +214,17 @@ async def provision_static_model(env: dict[str, str]) -> None:
         if env.get("NET003_EXECUTOR_ADAPTER") == "resnet50"
         else f"models/{MODEL_ID}"
     )
+    engine = create_async_engine(env["DATABASE_URL"])
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        async with factory() as db:
+            model = await db.get(SupportedModel, MODEL_ID)
+            if model is not None:
+                require_matching_existing_model(model, model_hash, model_key)
+                return
+    finally:
+        await engine.dispose()
+
     if env.get("STORAGE_ADAPTER") == "s3":
         storage = build_smoke_storage(env)
         await storage.put_object_once(
@@ -226,22 +237,41 @@ async def provision_static_model(env: dict[str, str]) -> None:
         artifact.write_bytes(model_bytes)
     engine = create_async_engine(env["DATABASE_URL"])
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    async with factory() as db:
-        model = await db.get(SupportedModel, MODEL_ID)
-        if model is None:
+    try:
+        async with factory() as db:
+            model = await db.get(SupportedModel, MODEL_ID)
+            if model is not None:
+                require_matching_existing_model(model, model_hash, model_key)
+                return
             model = SupportedModel(id=MODEL_ID, name=model_name)
             db.add(model)
-        model.price_base_units = 50_000
-        model.vram_required_gb = vram_required_gb
-        model.model_hash_sha256 = model_hash
-        model.model_version = "1.0"
-        model.preprocessing_version = "resnet50-v1"
-        model.model_source_url = model_key
-        model.max_input_size_mb = 1
-        model.supported_formats = ["png"]
-        model.input_type = "image"
-        await db.commit()
-    await engine.dispose()
+            model.price_base_units = 50_000
+            model.vram_required_gb = vram_required_gb
+            model.model_hash_sha256 = model_hash
+            model.model_version = "1.0"
+            model.preprocessing_version = "resnet50-v1"
+            model.model_source_url = model_key
+            model.max_input_size_mb = 1
+            model.supported_formats = ["png"]
+            model.input_type = "image"
+            await db.commit()
+    finally:
+        await engine.dispose()
+
+
+def require_matching_existing_model(model: SupportedModel, model_hash: str, model_key: str) -> None:
+    """Keep deployed model metadata intact when the smoke artifact is already approved."""
+    if (
+        model.model_hash_sha256 != model_hash
+        or model.model_source_url != model_key
+        or model.model_version != "1.0"
+        or model.preprocessing_version != "resnet50-v1"
+        or model.price_base_units != 50_000
+        or model.input_type != "image"
+    ):
+        raise RuntimeError(
+            "existing ResNet50 registry does not match the approved live probe artifact"
+        )
 
 
 def start_process(

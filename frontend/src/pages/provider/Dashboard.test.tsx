@@ -58,4 +58,16 @@ describe('ProviderDashboard', () => {
     expect(await screen.findByText('RTX 3050')).toBeInTheDocument()
     expect(getProviderDashboard).toHaveBeenCalledTimes(2)
   })
+
+  it('marks retained provider data as stale when refresh fails', async () => {
+    setAuthenticatedWallet(wallet)
+    vi.mocked(getProviderDashboard).mockResolvedValueOnce(dashboard).mockRejectedValueOnce(new Error('Backend unavailable'))
+
+    render(<MemoryRouter><ProviderDashboard /></MemoryRouter>)
+    expect(await screen.findByText('RTX 3050')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh provider data' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Backend unavailable')
+    expect(screen.getByText(/Showing last loaded provider data/i)).toBeInTheDocument()
+    expect(screen.getByText('RTX 3050')).toBeInTheDocument()
+  })
 })

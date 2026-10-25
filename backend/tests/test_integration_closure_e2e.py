@@ -470,7 +470,20 @@ async def test_golden_connected_journey(
                 assert final["proof_transaction"] is None
                 assert final["settlement_transaction"] is None
             elif journey == "refund_race":
-                assert final["proof_transaction"]["status"] == "replaced"
+                # The refund wins before proof broadcast: the abandoned intent
+                # is durable, but there is no transaction hash to expose as
+                # on-chain evidence in the API response.
+                proof_intent = (
+                    await db.execute(
+                        select(ChainTransaction).where(
+                            ChainTransaction.job_id == job_uuid,
+                            ChainTransaction.tx_type == "submitProof",
+                        )
+                    )
+                ).scalar_one()
+                assert proof_intent.status == "replaced"
+                assert proof_intent.tx_hash is None
+                assert final["proof_transaction"] is None
                 assert final["settlement_transaction"] is None
             else:
                 assert final["proof_transaction"]["status"] in ("confirmed", "finalized")

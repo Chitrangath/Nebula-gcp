@@ -14,6 +14,7 @@ from scripts.net003_sepolia_smoke import (
     SETTLED_STATE,
     create_and_wait,
     preflight_worker,
+    require_matching_existing_model,
     resolve_model_artifact,
 )
 
@@ -42,6 +43,35 @@ def test_fixture_mode_remains_the_default() -> None:
     assert payload == MODEL_BYTES
     assert name == "NET003 deterministic fixture"
     assert vram == 1
+
+
+def test_existing_approved_model_keeps_its_deployed_upload_limit() -> None:
+    digest = "ab" * 32
+    key = f"models/resnet50/{digest}.safetensors"
+    existing = SimpleNamespace(
+        model_hash_sha256=digest,
+        model_source_url=key,
+        model_version="1.0",
+        preprocessing_version="resnet50-v1",
+        price_base_units=50_000,
+        input_type="image",
+        max_input_size_mb=25,
+    )
+    require_matching_existing_model(existing, digest, key)
+    assert existing.max_input_size_mb == 25
+
+
+def test_live_probe_rejects_different_model_artifact_before_writes() -> None:
+    existing = SimpleNamespace(
+        model_hash_sha256="ab" * 32,
+        model_source_url="models/resnet50/approved.safetensors",
+        model_version="1.0",
+        preprocessing_version="resnet50-v1",
+        price_base_units=50_000,
+        input_type="image",
+    )
+    with pytest.raises(RuntimeError, match="existing ResNet50 registry"):
+        require_matching_existing_model(existing, "cd" * 32, "models/resnet50/new.safetensors")
 
 
 def test_real_model_requires_verified_safetensors(tmp_path: Path) -> None:

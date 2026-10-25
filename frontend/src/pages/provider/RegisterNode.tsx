@@ -23,7 +23,7 @@ export default function RegisterNode() {
     } catch (caught) { setError(safeError(caught)) } finally { setSubmitting(false) }
   }
 
-  return <main className="mx-auto max-w-2xl">
+  return <div className="mx-auto max-w-2xl nebula-form-page">
     <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-primary-700">Provider onboarding</p>
     <h1 className="text-3xl font-bold tracking-tight">Register a GPU node</h1>
     <p className="mt-2 text-gray-600">Register this device once, then keep the API key private. Your worker uses it for authenticated heartbeats and leases.</p>
@@ -36,5 +36,5 @@ export default function RegisterNode() {
       {error ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-800">{error}</p> : null}
       {result ? <section aria-live="polite" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4"><h2 className="font-semibold text-emerald-900">Node registered</h2><p className="mt-2 text-sm text-emerald-900">Save this API key now. It is shown only once.</p><dl className="mt-3 space-y-2 break-all text-sm"><div><dt className="font-medium">Node ID</dt><dd>{result.node_id}</dd></div><div><dt className="font-medium">Worker API key</dt><dd className="font-mono">{result.api_key}</dd></div></dl></section> : null}
     </form>
-  </main>
+  </div>
 }

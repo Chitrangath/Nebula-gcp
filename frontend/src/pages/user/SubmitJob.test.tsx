@@ -33,6 +33,7 @@ describe('SubmitJob', () => {
     const deps = dependencies()
     render(<MemoryRouter><SubmitJob models={[model]} backend={deps.backend} chain={deps.chain} authenticatedWallet={account} /></MemoryRouter>)
     expect(screen.getByText(/exact USDC approval/i)).toBeInTheDocument()
+    expect(screen.getByRole('complementary', { name: 'Submission overview' })).toHaveTextContent('50,000 base units')
     await userEvent.upload(screen.getByLabelText(/^ResNet input/), new File(['image'], 'cat.png', { type: 'image/png' }))
     await userEvent.click(screen.getByRole('button', { name: 'Review funding' }))
     expect(screen.getByLabelText('Signing summary')).toHaveTextContent(account)

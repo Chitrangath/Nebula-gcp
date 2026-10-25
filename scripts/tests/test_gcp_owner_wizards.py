@@ -15,7 +15,11 @@ from eth_account import Account
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("JWT_SECRET", "owner-wizard-test-secret")
 
-from scripts.gcp004_storage_exchange_probe import run_smoke, validate_roles
+from scripts.gcp004_storage_exchange_probe import (
+    _write_error_log,
+    run_smoke,
+    validate_roles,
+)
 from scripts.net003_sepolia_smoke import authenticate
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -307,6 +311,18 @@ class FoundationWizardContractTest(unittest.TestCase):
                 run_smoke({}, error_log)
 
             self.assertEqual(error_log.read_text(), "specific child failure\n")
+            self.assertEqual(error_log.stat().st_mode & 0o777, 0o600)
+
+    def test_storage_exchange_log_does_not_change_shared_parent_permissions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            shared_parent = Path(directory) / "shared"
+            shared_parent.mkdir(mode=0o755)
+            shared_parent.chmod(0o755)
+            error_log = shared_parent / "probe.stderr.log"
+
+            _write_error_log(error_log, "diagnostic\n")
+
+            self.assertEqual(shared_parent.stat().st_mode & 0o777, 0o755)
             self.assertEqual(error_log.stat().st_mode & 0o777, 0o600)
 
 

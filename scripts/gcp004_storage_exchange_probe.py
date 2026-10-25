@@ -73,7 +73,6 @@ def run_smoke(env: dict[str, str], error_log: Path, timeout: int = 900) -> str:
 
 def _write_error_log(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    path.parent.chmod(0o700)
     path.write_text(content, encoding="utf-8")
     path.chmod(0o600)
 

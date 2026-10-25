@@ -76,17 +76,19 @@ function ResultPreview({ result }: { result: JobResult }) {
   if (result.model_id === 'bert-base') {
     const selected = result.scores.find((score) => score.stars === result.stars)
     return <section aria-label="Inference result" className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-5">
-      <p className="text-sm font-semibold uppercase tracking-wide text-emerald-800">Verified inference result</p>
+      <p className="text-sm font-semibold uppercase tracking-wide text-emerald-800">Result from accepted proof</p>
       <h2 className="mt-2 text-2xl font-bold text-emerald-950">{result.stars}-star sentiment</h2>
       <p className="mt-1 text-emerald-900">{selected ? percentage(selected.probability_hex) : 'Verified score unavailable'}</p>
+      <p className="mt-3 text-sm text-emerald-900">The verifier accepted this job’s proof envelope. That does not prove that the model prediction is correct.</p>
       <ol className="mt-4 grid grid-cols-2 gap-2 text-sm sm:grid-cols-5">
         {result.scores.map((score) => <li key={score.stars} className="rounded border border-emerald-200 bg-white p-2"><span className="font-semibold">{score.stars} star</span><span className="block text-xs text-gray-600">{percentage(score.probability_hex)}</span></li>)}
       </ol>
     </section>
   }
   return <section aria-label="Inference result" className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-5">
-    <p className="text-sm font-semibold uppercase tracking-wide text-emerald-800">Verified inference result</p>
+    <p className="text-sm font-semibold uppercase tracking-wide text-emerald-800">Result from accepted proof</p>
     <h2 className="mt-2 text-xl font-bold text-emerald-950">Top image classes</h2>
+    <p className="mt-3 text-sm text-emerald-900">The verifier accepted this job’s proof envelope. That does not prove that the model prediction is correct.</p>
     <ol className="mt-4 grid gap-2 sm:grid-cols-2">
       {result.top_k.map((match) => <li key={match.index} className="rounded border border-emerald-200 bg-white p-3"><span className="font-semibold">ImageNet class {match.index}</span><span className="ml-2 text-sm text-gray-600">{percentage(match.probability_hex)}</span></li>)}
     </ol>
@@ -123,13 +125,16 @@ export default function JobDetail() {
     finally { if (!controller.signal.aborted) setDownloading(false) }
   }
 
-  return <main className="mx-auto max-w-6xl">
+  return <div className="mx-auto max-w-6xl nebula-detail-page">
     <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-primary-700">AI user workspace</p>
     <h1 className="text-3xl font-bold tracking-tight">Job progress</h1>
     {loading ? <p role="status" className="mt-6">Loading job…</p> : null}
     {error ? <div role="alert" className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800">{error.message}<button type="button" onClick={retry} className="ml-2 min-h-11 font-semibold underline">Retry</button></div> : null}
     {job ? <>
-      <div className="my-6 flex flex-wrap items-center gap-3"><span className="rounded-full bg-primary-50 px-3 py-1 text-sm font-semibold text-primary-800">{job.status.replace(/_/g, ' ')}</span><span className="font-medium">{job.model_id}</span></div>
+      <section aria-label="Job summary" className="nebula-detail-summary">
+        <div><p className="nebula-page-kicker">JOB RECORD</p><p className="nebula-detail-id">Job {job.id}</p><p className="nebula-detail-model">{job.model_id}</p></div>
+        <span className={`nebula-status nebula-status-${job.status}`}><span aria-hidden="true" />{job.status.replace(/_/g, ' ')}</span>
+      </section>
       <Lifecycle job={job} />
       {['failed', 'attempts_exhausted', 'expired_pre_escrow'].includes(job.status) ? <p role="alert" className="mt-5 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800">This job failed. No successful result is available; review the status and submit a new job if needed.</p> : null}
       {['refunded', 'awaiting_timeout_refund'].includes(job.status) ? <p role="status" className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900">This job did not settle to a provider. Refund state: {job.refund_status ?? job.status.replace(/_/g, ' ')}.</p> : null}
@@ -159,5 +164,5 @@ export default function JobDetail() {
       {canAccessResult ? <button type="button" onClick={() => void download()} disabled={downloading} className="mt-5 min-h-11 rounded-lg bg-primary-600 px-5 py-3 font-semibold text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-50">{downloading ? 'Preparing result…' : 'Download result'}</button> : null}
       <p className="mt-6"><Link to="/user/dashboard" className="inline-flex min-h-11 items-center font-semibold text-primary-700 underline underline-offset-4">Back to jobs</Link></p>
     </> : null}
-  </main>
+  </div>
 }

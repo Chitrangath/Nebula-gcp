@@ -32,7 +32,7 @@ const snapshot = {
 describe('Network', () => {
   afterEach(() => { cleanup(); vi.useRealTimers(); vi.clearAllMocks() })
 
-  it('shows all demo devices, roles, live work, and the trust boundary', async () => {
+  it('shows registered GPU nodes, roles, work, and the trust boundary', async () => {
     vi.mocked(getNetworkSnapshot).mockResolvedValue(snapshot)
     render(<Network />)
 
@@ -44,6 +44,9 @@ describe('Network', () => {
     expect(screen.getAllByText('Verifier').length).toBeGreaterThan(0)
     expect(screen.getByText('BERT sentiment')).toBeInTheDocument()
     expect(screen.getByText('Active leases')).toBeInTheDocument()
+    expect(screen.getByText('Registered GPU nodes')).toBeInTheDocument()
+    expect(screen.queryByText('Device A · AI user')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'This browser · AI user' })).toBeInTheDocument()
     expect(screen.getAllByRole('heading', { name: 'Last completed job' })).toHaveLength(2)
     expect(screen.getByRole('region', { name: 'Evidence boundaries' })).toHaveTextContent('Backend-observed')
     expect(screen.getByRole('region', { name: 'Evidence boundaries' })).toHaveTextContent('On-chain')
@@ -77,5 +80,15 @@ describe('Network', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
     expect(screen.getByText('RTX 3050')).toBeInTheDocument()
     expect(getNetworkSnapshot).toHaveBeenCalledTimes(2)
+  })
+
+  it('labels retained network data as stale after a refresh failure', async () => {
+    vi.mocked(getNetworkSnapshot).mockResolvedValueOnce(snapshot).mockRejectedValueOnce(new Error('Temporary outage'))
+    render(<Network />)
+    expect(await screen.findByText('RTX 3050')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh network' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Temporary outage')
+    expect(screen.getByText(/Showing last observed network data/i)).toBeInTheDocument()
+    expect(screen.getByText('RTX 3050')).toBeInTheDocument()
   })
 })

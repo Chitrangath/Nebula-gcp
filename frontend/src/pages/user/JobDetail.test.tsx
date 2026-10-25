@@ -33,6 +33,7 @@ describe('JobDetail', () => {
     render(<MemoryRouter initialEntries={['/user/jobs/job-1']}><Routes><Route path="/user/jobs/:id" element={<JobDetail />} /></Routes></MemoryRouter>)
 
     expect(await screen.findByText('resnet50')).toBeInTheDocument()
+    expect(screen.getByText('Job job-1')).toBeInTheDocument()
     expect(screen.getByText('valid')).toBeInTheDocument()
     expect(screen.getByText('Chain ID 421614')).toBeInTheDocument()
     expect(screen.getByText('credited')).toBeInTheDocument()
@@ -40,6 +41,7 @@ describe('JobDetail', () => {
     expect(screen.getByText('Expected fingerprint')).toBeInTheDocument()
     expect(screen.getByText('Submitted proof fingerprint')).toBeInTheDocument()
     expect(screen.getByText(job.proof_fingerprint)).toBeInTheDocument()
+    expect(await screen.findByText(/does not prove that the model prediction is correct/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /escrow transaction/i })).toHaveAttribute('href', expect.stringContaining(job.escrow_transaction.hash))
     expect(screen.getByRole('link', { name: /proof transaction/i })).toHaveAttribute('href', expect.stringContaining(job.proof_transaction.hash))
     await userEvent.click(screen.getByRole('button', { name: 'Download result' }))

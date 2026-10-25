@@ -4,14 +4,141 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #1b2540;
+  background: #f5f7fb;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+a, button { -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 2px solid #4c6ef5; outline-offset: 3px; }
+
+.nebula-app { min-height: 100dvh; display: flex; background: #f6f8fc; }
+.nebula-sidebar { width: 252px; flex: 0 0 252px; min-height: 100dvh; display: flex; flex-direction: column; padding: 30px 16px 22px; background: #0e1528; color: #f7f9ff; border-right: 1px solid #232e45; }
+.nebula-brand { display: inline-flex; align-items: center; gap: 11px; padding: 6px 12px; color: #fff; text-decoration: none; width: fit-content; }
+.nebula-brand strong { display: block; font-size: 19px; line-height: 1; letter-spacing: -.035em; font-weight: 750; }
+.nebula-brand small { display: block; margin-top: 5px; color: #8796b7; font-size: 9px; font-weight: 700; letter-spacing: .2em; }
+.nebula-brand-mark { width: 30px; height: 30px; display: grid; place-items: center; flex: 0 0 auto; border: 1.5px solid #8a9cff; border-radius: 9px; transform: rotate(-14deg); background: #394fb0; box-shadow: 0 0 20px #4c6ef544; }
+.nebula-brand-mark span { width: 13px; height: 13px; border: 1.5px solid white; border-radius: 4px; transform: rotate(28deg); }
+.nebula-nav-list { margin-top: 58px; }
+.nebula-nav-caption { padding: 0 14px; margin-bottom: 13px; color: #8190b1; letter-spacing: .18em; font-size: 10px; font-weight: 700; }
+.nebula-nav-link { min-height: 45px; display: flex; align-items: center; gap: 12px; padding: 9px 13px; margin-bottom: 4px; border-radius: 9px; color: #aebbd3; font-size: 13px; font-weight: 550; text-decoration: none; transition: background .15s ease, color .15s ease; }
+.nebula-nav-link:hover { background: #1c2942; color: white; }
+.nebula-nav-link.is-active { background: #24365b; color: white; box-shadow: inset 3px 0 #8da0ff; }
+.nebula-nav-marker { color: #8194bf; font: 600 10px ui-monospace, monospace; width: 20px; }
+.nebula-nav-arrow { margin-left: auto; color: #a5b7ff; opacity: 0; }
+.nebula-nav-link.is-active .nebula-nav-arrow { opacity: 1; }
+.nebula-sidebar-bottom { display: flex; align-items: center; gap: 8px; margin-top: auto; padding: 14px 10px 2px; border-top: 1px solid #273149; color: #aab8d1; font-size: 11px; }
+.nebula-sidebar-bottom small { margin-left: auto; font-size: 9px; letter-spacing: .08em; color: #8a9abb; }
+.nebula-sidebar-pulse, .nebula-chain-chip span { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #8da0ff; }
+.nebula-main-column { flex: 1 1 auto; min-width: 0; }
+.nebula-topbar { height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 clamp(20px, 3vw, 48px); background: #fff; border-bottom: 1px solid #e4e9f2; }
+.nebula-breadcrumb { display: flex; align-items: center; gap: 11px; min-width: 0; font-size: 13px; color: #8290a9; white-space: nowrap; }
+.nebula-breadcrumb strong { overflow: hidden; text-overflow: ellipsis; font-weight: 650; color: #263553; }
+.nebula-topbar-actions { display: flex; align-items: center; gap: 18px; }
+.nebula-chain-chip { display: inline-flex; align-items: center; gap: 8px; color: #516280; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.nebula-page { max-width: 1512px; margin: 0 auto; padding: 34px clamp(20px, 3vw, 48px) 68px; }
+.nebula-skip-link { position: fixed; top: 8px; left: 8px; z-index: 100; padding: 10px 16px; background: #fff; color: #1d319a; transform: translateY(-150%); }
+.nebula-skip-link:focus { transform: translateY(0); }
+.nebula-mobile-header, .nebula-mobile-menu { display: none; }
+.nebula-page input, .nebula-page textarea, .nebula-page select { background-color: white; }
+.nebula-page section.bg-white, .nebula-page article.bg-white { box-shadow: 0 4px 20px #23385a08; }
+
+.nebula-hero { position: relative; overflow: hidden; min-height: 430px; padding: clamp(30px, 5vw, 64px); border-radius: 20px; background: #111c34; color: white; isolation: isolate; }
+.nebula-hero::before { content: ''; position: absolute; inset: 0; z-index: -1; opacity: .58; background-image: radial-gradient(circle at 78% 44%, #5574f05c, transparent 33%), linear-gradient(#ffffff0b 1px, transparent 1px), linear-gradient(90deg, #ffffff0b 1px, transparent 1px); background-size: auto, 42px 42px, 42px 42px; }
+.nebula-hero-copy { position: relative; z-index: 1; max-width: 660px; }
+.nebula-eyebrow { display: inline-flex; align-items: center; gap: 9px; padding: 8px 11px; border-radius: 999px; border: 1px solid #647baf; background: #ffffff0c; color: #c7d5ff; font-size: 11px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+.nebula-eyebrow span { width: 7px; height: 7px; border-radius: 50%; background: #88a3ff; }
+.nebula-hero h1 { margin-top: 28px; font-size: clamp(37px, 4vw, 62px); line-height: 1.04; letter-spacing: -.055em; font-weight: 740; }
+.nebula-hero h1 em { display: block; font-style: normal; color: #a0b4ff; }
+.nebula-hero p { margin-top: 22px; max-width: 580px; color: #b6c4dd; font-size: 15px; line-height: 1.7; }
+.nebula-hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 11px; margin-top: 30px; }
+.nebula-button-primary, .nebula-button-secondary { display: inline-flex; min-height: 45px; align-items: center; justify-content: center; gap: 12px; padding: 0 18px; border-radius: 9px; font-size: 13px; font-weight: 700; text-decoration: none; transition: background .15s ease, border-color .15s ease; }
+.nebula-button-primary { background: #7890ff; color: #0e1730; }.nebula-button-primary:hover { background: #9aabff; }
+.nebula-button-secondary { border: 1px solid #667596; color: #f0f3ff; }.nebula-button-secondary:hover { background: #ffffff16; }
+.nebula-orbit { position: absolute; right: 4%; top: 10%; width: min(34vw, 420px); aspect-ratio: 1; border: 1px solid #7592e145; border-radius: 50%; box-shadow: 0 0 0 44px #89a2e70d, 0 0 0 88px #89a2e709; }
+.nebula-orbit::before, .nebula-orbit::after { content: ''; position: absolute; border: 1px solid #7592e155; border-radius: 50%; inset: 18%; }.nebula-orbit::after { inset: 38%; background: #667df174; box-shadow: 0 0 50px #6e8eff88; }
+.nebula-orbit-point { position: absolute; width: 14px; height: 14px; border-radius: 4px; background: #aec0ff; box-shadow: 0 0 20px #aac0ff; }.nebula-orbit-point.one { left: 8%; top: 27%; }.nebula-orbit-point.two { right: 5%; top: 55%; }.nebula-orbit-point.three { left: 48%; bottom: -1%; }
+.nebula-section-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin: 34px 0 14px; }.nebula-section-heading h2 { font-size: 20px; font-weight: 720; letter-spacing: -.025em; color: #1b2946; }.nebula-section-heading p { color: #667590; font-size: 13px; }
+.nebula-feature-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.nebula-feature-card { min-height: 196px; padding: 23px; border: 1px solid #e1e7f0; border-radius: 14px; background: #fff; box-shadow: 0 5px 22px #1d2d5308; }.nebula-feature-card small { font: 700 11px ui-monospace, monospace; color: #5c73d4; }.nebula-feature-card h3 { margin-top: 22px; color: #1f2c49; font-size: 16px; font-weight: 700; }.nebula-feature-card p { margin-top: 9px; max-width: 34ch; color: #6b7892; font-size: 13px; line-height: 1.65; }
+.nebula-feature-card a { display: inline-flex; margin-top: 18px; min-height: 32px; align-items: center; color: #3552c4; font-size: 12px; font-weight: 700; text-decoration: none; }.nebula-feature-card a:hover { text-decoration: underline; }
+
+.nebula-workspace { width: 100%; }
+.nebula-page-heading { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 26px; }
+.nebula-heading-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.nebula-page-kicker { color: #5c72ca; font-size: 10px; font-weight: 760; letter-spacing: .17em; }
+.nebula-page-heading h1 { margin-top: 8px; color: #1b2946; font-size: clamp(28px, 3vw, 38px); font-weight: 730; letter-spacing: -.045em; line-height: 1.15; }
+.nebula-page-heading > div > p:last-child { margin-top: 9px; max-width: 65ch; color: #667590; font-size: 14px; line-height: 1.6; }
+.nebula-action-link { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; gap: 12px; padding: 0 17px; border-radius: 9px; background: #4c63cf; color: white; font-size: 13px; font-weight: 700; text-decoration: none; }.nebula-action-link:hover { background: #394fb5; }
+.nebula-metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.nebula-metric { min-height: 130px; padding: 20px 23px; border: 1px solid #e1e7f0; border-radius: 13px; background: white; box-shadow: 0 5px 20px #1d2d5307; }
+.nebula-metric span { display: block; color: #66758f; font-size: 12px; font-weight: 600; }.nebula-metric strong { display: block; margin-top: 12px; color: #1c2b49; font-size: 31px; line-height: 1; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }.nebula-metric small { display: block; margin-top: 9px; color: #8b98ad; font-size: 11px; }
+.nebula-data-panel { margin-top: 24px; border: 1px solid #e1e7f0; border-radius: 14px; background: #fff; overflow: hidden; box-shadow: 0 5px 22px #1d2d5308; }
+.nebula-data-panel-head { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 19px 22px; border-bottom: 1px solid #e9edf4; }.nebula-data-panel-head h2 { margin-top: 5px; color: #1e2b47; font-size: 18px; font-weight: 720; }
+.nebula-text-button { min-height: 40px; padding: 0 10px; color: #3c57c3; font-size: 12px; font-weight: 700; }.nebula-text-button:hover { text-decoration: underline; }.nebula-text-button:disabled { color: #9aa7bb; cursor: wait; }
+.nebula-panel-message { padding: 24px; color: #65738b; font-size: 13px; }.nebula-inline-link { display: inline-flex; min-height: 36px; align-items: center; margin-top: 10px; color: #3c57c3; font-weight: 700; }
+.nebula-job-row { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; min-height: 82px; padding: 15px 22px; border-bottom: 1px solid #edf0f5; }.nebula-job-row:last-child { border-bottom: 0; }
+.nebula-job-icon { display: grid; flex: 0 0 36px; height: 36px; place-items: center; border-radius: 9px; background: #edf0ff; color: #4158c7; font: 700 14px ui-monospace, monospace; }
+.nebula-job-main { display: flex; flex: 1 1 180px; min-width: 0; flex-direction: column; gap: 4px; }.nebula-job-main a { color: #263653; font-size: 13px; font-weight: 700; text-decoration: none; }.nebula-job-main a:hover { color: #394fb5; text-decoration: underline; }.nebula-job-main span { overflow-wrap: anywhere; color: #8996aa; font: 11px ui-monospace, monospace; }
+.nebula-status { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 9px; border: 1px solid #d9dff2; border-radius: 999px; background: #f4f6fc; color: #536386; font-size: 11px; font-weight: 700; white-space: nowrap; }.nebula-status > span { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }.nebula-status-completed { color: #14765a; background: #edf9f4; border-color: #c6eadb; }.nebula-status-running, .nebula-status-assigned, .nebula-status-verifying, .nebula-status-settling { color: #365cbd; background: #eef2ff; border-color: #d6dfff; }.nebula-status-failed, .nebula-status-refunded, .nebula-status-attempts_exhausted { color: #a94842; background: #fff3f1; border-color: #f3d5d0; }
+.nebula-job-date { min-width: 82px; color: #8b98ab; font-size: 11px; text-align: right; white-space: nowrap; }.nebula-job-open { display: grid; width: 40px; height: 40px; place-items: center; border: 1px solid #e0e6f1; border-radius: 9px; color: #465ac0; text-decoration: none; }.nebula-job-open:hover { background: #f0f3ff; }.nebula-job-warning { flex: 1 0 100%; color: #ae4b39; font-size: 11px; }
+
+.nebula-provider-page > section[aria-label="Provider identity"] { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; margin-top: 0; padding: 18px 22px; border-color: #dde5f2; background: #f0f3ff; box-shadow: none; }
+.nebula-provider-page > section[aria-label="Provider identity"] h2 { color: #5666ab; font-size: 11px; letter-spacing: .11em; }
+.nebula-provider-page > section[aria-label="Provider identity"] p { margin: 0; color: #26395e; }
+.nebula-provider-page > section[aria-labelledby] > h2, .nebula-network-page #gpu-network-heading { color: #1c2b49; font-size: 20px; font-weight: 720; letter-spacing: -.025em; }
+.nebula-provider-page > section[aria-labelledby] dl > div, .nebula-provider-page > section[aria-labelledby] article { border-color: #e0e7f1; border-radius: 13px; box-shadow: 0 5px 22px #1d2d5308; }
+.nebula-provider-page > section[aria-labelledby="earnings-heading"] dl { gap: 14px; }
+.nebula-provider-page > section[aria-labelledby="earnings-heading"] dd { color: #1d2d4e; font-variant-numeric: tabular-nums; }
+.nebula-network-page > div:first-child { align-items: end; }
+.nebula-network-page > div:first-child p:first-child, .nebula-form-page > p:first-child, .nebula-detail-page > p:first-child { color: #5c72ca; font-size: 10px; font-weight: 760; letter-spacing: .17em; }
+.nebula-network-page > div:first-child h1, .nebula-form-page > h1, .nebula-detail-page > h1 { color: #1b2946; font-size: clamp(28px, 3vw, 38px); font-weight: 730; letter-spacing: -.045em; }
+.nebula-network-page section[aria-label="Network summary"] > div { border-color: #e0e7f1; border-radius: 13px; box-shadow: 0 5px 20px #1d2d5307; }
+.nebula-network-page article, .nebula-detail-page section.bg-white, .nebula-form-page form { border-color: #e0e7f1; border-radius: 13px; box-shadow: 0 5px 22px #1d2d5308; }
+.nebula-detail-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin: 24px 0 18px; padding: 20px 24px; border: 1px solid #dfe6f2; border-radius: 13px; background: #fff; box-shadow: 0 5px 22px #1d2d5308; }
+.nebula-detail-id { margin-top: 7px; color: #253652; font: 600 13px ui-monospace, monospace; overflow-wrap: anywhere; }
+.nebula-detail-model { margin-top: 4px; color: #7a89a1; font-size: 12px; }
+.nebula-form-page form { overflow: hidden; }
+.nebula-form-page label, .nebula-form-page input, .nebula-form-page textarea, .nebula-form-page select { color: #243451; }
+.nebula-submit-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(250px, 1fr); align-items: start; gap: 18px; }
+.nebula-submit-grid form { min-width: 0; }
+.nebula-submission-aside { position: sticky; top: 22px; padding: 24px; border: 1px solid #dfe6f2; border-radius: 13px; background: white; box-shadow: 0 5px 22px #1d2d5308; }
+.nebula-submission-aside h2 { margin-top: 8px; color: #1c2b49; font-size: 19px; font-weight: 720; }
+.nebula-submission-aside dl { margin-top: 24px; }
+.nebula-submission-aside dl > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; padding: 13px 0; border-top: 1px solid #edf0f5; font-size: 12px; }
+.nebula-submission-aside dt { color: #71809a; }.nebula-submission-aside dd { color: #273753; font-weight: 700; overflow-wrap: anywhere; }
+.nebula-submission-note { margin-top: 18px; padding: 14px; border-radius: 9px; background: #f0f3ff; color: #445683; font-size: 12px; line-height: 1.65; }
+.nebula-submission-stage { margin-top: 16px; padding: 12px; border-radius: 9px; background: #eaf8f2; color: #126347; font-size: 12px; font-weight: 700; }
+
+@media (max-width: 900px) {
+  .nebula-sidebar { display: none; }
+  .nebula-app { display: block; }
+  .nebula-mobile-header { display: flex; height: 66px; align-items: center; justify-content: space-between; padding: 0 20px; background: #0e1528; }
+  .nebula-mobile-toggle { min-width: 44px; min-height: 44px; padding: 0 10px; color: #fff; border: 1px solid #4a5b82; border-radius: 8px; font-size: 12px; font-weight: 700; }
+  .nebula-mobile-menu { display: block; position: absolute; z-index: 30; top: 66px; left: 0; right: 0; padding: 4px 20px 20px; background: #0e1528; box-shadow: 0 18px 26px #15233d55; }
+  .nebula-mobile-current { margin: 8px 0 14px; color: #a8b8d7; font-size: 12px; }
+  .nebula-mobile-menu .nebula-nav-list { margin: 0; }
+  .nebula-topbar { height: 58px; }
+  .nebula-submit-grid { grid-template-columns: 1fr; }
+  .nebula-submission-aside { position: static; }
+}
+@media (max-width: 620px) {
+  .nebula-chain-chip { display: none; }
+  .nebula-hero { min-height: 430px; }
+  .nebula-orbit { width: 260px; right: -95px; top: 25%; opacity: .36; }
+  .nebula-feature-grid { grid-template-columns: 1fr; }
+  .nebula-metric-grid { grid-template-columns: 1fr; }
+  .nebula-job-date { display: none; }
+  .nebula-job-row { gap: 10px; }
+  .nebula-provider-page > section[aria-label="Provider identity"] { align-items: start; flex-direction: column; }
+  .nebula-section-heading { align-items: start; flex-direction: column; gap: 5px; }
 }

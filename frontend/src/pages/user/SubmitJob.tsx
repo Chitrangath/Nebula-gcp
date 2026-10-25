@@ -24,6 +24,10 @@ function safeError(error: unknown): string {
   return 'Job submission failed. Retry to continue safely from the last confirmed step.'
 }
 
+function listedPrice(value: string): string {
+  try { return `${BigInt(value).toLocaleString()} base units` } catch { return 'Unavailable' }
+}
+
 export default function SubmitJob({ models: suppliedModels, backend = jobBackend, chain: suppliedChain, authenticatedWallet }: SubmitJobProps) {
   const [models, setModels] = useState<SupportedModel[]>(suppliedModels ?? [])
   const [modelId, setModelId] = useState(suppliedModels?.[0]?.id ?? '')
@@ -105,10 +109,11 @@ export default function SubmitJob({ models: suppliedModels, backend = jobBackend
   }
 
   return (
-    <div className="max-w-2xl">
+    <div className="nebula-form-page">
       <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-primary-700">AI user workspace</p>
       <h1 className="text-3xl font-bold tracking-tight">Submit an inference job</h1>
       <p className="mb-8 mt-2 text-gray-600">Choose a backend-approved model, add its input, then review and fund the Arbitrum Sepolia escrow.</p>
+      <div className="nebula-submit-grid">
       <form onSubmit={(event) => void handleSubmit(event)} className="space-y-6 rounded-xl border border-gray-200 bg-white p-5 sm:p-6">
         <label className="block"><span className="mb-2 block font-medium">Approved model</span>
           <select value={modelId} onChange={(event) => { setModelId(event.target.value); setInput(null); setTextInput(''); setError(null); setSubmittedJobId(null); checkpoint.current = null; setReview(null) }} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white p-3 focus:border-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-200">
@@ -139,6 +144,19 @@ export default function SubmitJob({ models: suppliedModels, backend = jobBackend
           {stage ? stageLabels[stage] : error && checkpoint.current ? 'Retry submission' : review ? 'Confirm upload and sign' : 'Review funding'}
         </button>
       </form>
+      <aside aria-label="Submission overview" className="nebula-submission-aside">
+        <p className="nebula-page-kicker">SUBMISSION OVERVIEW</p>
+        <h2>Before you sign</h2>
+        <dl>
+          <div><dt>Approved model</dt><dd>{selectedModel?.name ?? 'Choose a model'}</dd></div>
+          <div><dt>Listed model price</dt><dd>{selectedModel ? listedPrice(selectedModel.price_base_units) : 'Unavailable'}</dd></div>
+          <div><dt>Input</dt><dd>{selectedModel?.input_type === 'text' ? `${Array.from(textInput).length} characters` : input?.name ?? 'No file selected'}</dd></div>
+          <div><dt>Network</dt><dd>Arbitrum Sepolia</dd></div>
+        </dl>
+        <p className="nebula-submission-note">The exact escrow amount and wallet balance are checked against the live contract before signing. No job is funded until you confirm in your wallet.</p>
+        {stage ? <p role="status" className="nebula-submission-stage">{stageLabels[stage]}</p> : null}
+      </aside>
+      </div>
       {submittedJobId ? <div role="status" className="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-900"><p className="font-semibold">Escrow confirmed. Your job is ready for assignment.</p><Link to={`/user/jobs/${submittedJobId}`} className="mt-2 inline-flex min-h-11 items-center font-semibold underline underline-offset-4">Follow job progress</Link></div> : null}
     </div>
   )

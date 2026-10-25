@@ -1,19 +1,29 @@
 """Golden convergence at backend/worker protocol seams."""
 
-from app.services.eip712 import ProofEnvelope as BackendEnvelope
-from app.services.eip712 import envelope_typed_data
-from app.services.fingerprint import compute_fingerprint as backend_fingerprint
-from app.services.merkle import build_merkle_tree
+import sys
+from pathlib import Path
+
+import pytest
 from eth_account import Account
 from eth_account.messages import encode_typed_data
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "worker"))
+
 from proof.envelope import ProofEnvelope as WorkerEnvelope
 from proof.envelope import typed_data
 from proof.fingerprint import compute_fingerprint as worker_fingerprint
 from proof.merkle import build_merkle_root
-import pytest
+
+from app.services.eip712 import ProofEnvelope as BackendEnvelope
+from app.services.eip712 import envelope_typed_data
+from app.services.fingerprint import compute_fingerprint as backend_fingerprint
+from app.services.merkle import build_merkle_tree
 
 
-@pytest.mark.parametrize("model_id,preprocessing_version", [("resnet50", "resnet50-v1"), ("bert-base", "bert-sentiment-v1")])
+@pytest.mark.parametrize(
+    "model_id,preprocessing_version",
+    [("resnet50", "resnet50-v1"), ("bert-base", "bert-sentiment-v1")],
+)
 def test_fingerprint_convergence(model_id, preprocessing_version) -> None:
     values = {
         "job_id": "12345678-1234-5678-1234-567812345678",

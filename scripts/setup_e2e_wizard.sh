@@ -196,6 +196,7 @@ esac
 NODE_ARCHIVE="node-${NODE_VERSION}-linux-${NODE_PLATFORM_ARCH}"
 POSTGRES_CONTAINER="nebula-postgres"
 POSTGRES_PORT="5433"
+E2E_JWT_SECRET="local-e2e-only-change-before-any-shared-deployment"
 
 usage() {
   cat <<'EOF'
@@ -386,7 +387,7 @@ write_local_environment() {
   ENV_FILE="$REPO_ROOT/backend/.env"
   umask 077
   write_env DATABASE_URL "postgresql+asyncpg://nebula:nebula_e2e@127.0.0.1:${POSTGRES_PORT}/nebula"
-  write_env JWT_SECRET "local-e2e-only-change-before-any-shared-deployment"
+  write_env JWT_SECRET "$E2E_JWT_SECRET"
   write_env FRONTEND_URL "http://127.0.0.1:5173"
   write_env STORAGE_ADAPTER "file"
   write_env LOCAL_STORAGE_PATH "/tmp/nebula-e2e-storage"
@@ -437,13 +438,13 @@ ensure_postgres() {
   if ! docker exec "$POSTGRES_CONTAINER" psql -U nebula -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='nebula_test'" | grep -qx 1; then
     docker exec "$POSTGRES_CONTAINER" createdb -U nebula nebula_test
   fi
-  (cd "$REPO_ROOT/backend"; DATABASE_URL="postgresql+asyncpg://nebula:nebula_e2e@127.0.0.1:${POSTGRES_PORT}/nebula_test" .venv/bin/alembic upgrade head)
+  (cd "$REPO_ROOT/backend"; DATABASE_URL="postgresql+asyncpg://nebula:nebula_e2e@127.0.0.1:${POSTGRES_PORT}/nebula_test" JWT_SECRET="$E2E_JWT_SECRET" .venv/bin/alembic upgrade head)
 }
 
 run_golden_e2e() {
   local e2e_url="postgresql+asyncpg://nebula:nebula_e2e@127.0.0.1:${POSTGRES_PORT}/nebula_test"
-  (cd "$REPO_ROOT"; DATABASE_URL="$e2e_url" backend/.venv/bin/pytest -q backend/tests/test_integration_closure_e2e.py)
-  (cd "$REPO_ROOT"; DATABASE_URL="$e2e_url" backend/.venv/bin/pytest -q backend/tests/test_integration_closure_e2e.py)
+  (cd "$REPO_ROOT"; DATABASE_URL="$e2e_url" JWT_SECRET="$E2E_JWT_SECRET" backend/.venv/bin/pytest -q backend/tests/test_integration_closure_e2e.py)
+  (cd "$REPO_ROOT"; DATABASE_URL="$e2e_url" JWT_SECRET="$E2E_JWT_SECRET" backend/.venv/bin/pytest -q backend/tests/test_integration_closure_e2e.py)
 }
 
 check_optional_cuda() {
