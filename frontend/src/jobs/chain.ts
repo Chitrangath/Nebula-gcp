@@ -153,3 +153,23 @@ export function createInjectedChainGateway(provider: Eip1193Provider): ChainGate
     },
   }
 }
+
+/** Withdraw the connected provider's pull-payment balance from the contract. */
+export async function withdrawInjectedWallet(provider: Eip1193Provider, signal?: AbortSignal): Promise<Hex> {
+  const transport = custom(provider)
+  const publicClient = createPublicClient({ chain: arbitrumSepolia, transport })
+  const walletClient = createWalletClient({ chain: arbitrumSepolia, transport })
+  const address = paymentAddress()
+  const abi = contractArtifact.abi as Abi
+  const [chainId, account] = await Promise.all([walletClient.getChainId(), walletClient.getAddresses()])
+  if (chainId !== ARBITRUM_SEPOLIA_CHAIN_ID) throw new WrongChainError(chainId)
+  const owner = account[0]
+  if (!owner) throw new Error('Connect the provider wallet before withdrawing')
+  signal?.throwIfAborted()
+  const nonce = await publicClient.getTransactionCount({ address: owner, blockTag: 'pending' })
+  const fee = await currentFeeOverrides(publicClient)
+  const hash = await walletClient.writeContract({ account: owner, chain: arbitrumSepolia, address, abi, functionName: 'withdraw', nonce, ...fee })
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 1, timeout: 120_000 })
+  if (receipt.status !== 'success') throw new Error('Withdrawal transaction reverted')
+  return hash as Hex
+}
