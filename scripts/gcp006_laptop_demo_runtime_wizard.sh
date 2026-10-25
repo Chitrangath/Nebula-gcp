@@ -143,6 +143,9 @@ run_wizard() {
   write_env_assignment "$BACKEND_ENV" FRONTEND_URL "$(load_value FRONTEND_URL)"
   write_env_assignment "$BACKEND_ENV" ARBITRUM_SEPOLIA_RPC "$rpc_url"
   write_env_assignment "$BACKEND_ENV" NEBULA_PAYMENT_CONTRACT "$contract_address"
+  # Start event ingestion at the deployed contract instead of block zero.
+  # The block is public deployment metadata, not a credential.
+  write_env_assignment "$BACKEND_ENV" CONTRACT_DEPLOYMENT_BLOCK "312679343"
   write_env_assignment "$BACKEND_ENV" BACKEND_EXECUTOR_ADDRESS "$executor_address"
   write_env_assignment "$BACKEND_ENV" BACKEND_PRIVATE_KEY "$executor_private_key"
   write_env_assignment "$BACKEND_ENV" STORAGE_ADAPTER s3
