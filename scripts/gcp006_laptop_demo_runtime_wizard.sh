@@ -59,7 +59,7 @@ prepare_commands() {
       "$BACKEND_ENV" "${NEBULA_WIZARD_REPO_ROOT}/backend" "$name" > "$script_path"
     chmod 700 "$script_path"
   done
-  printf '#!/usr/bin/env bash\nset -euo pipefail\nset -a\nsource %q\nset +a\ncd %q\nexec python3 worker.py\n' \
+  printf '#!/usr/bin/env bash\nset -euo pipefail\nset -a\nsource %q\nset +a\ncd %q\nexec .venv/bin/python worker.py\n' \
     "$WORKER_ENV" "${NEBULA_WIZARD_REPO_ROOT}/worker" > "${RUNTIME_DIR}/worker.sh"
   chmod 700 "${RUNTIME_DIR}/worker.sh"
   printf 'Prepared worker plus receipt, assignment, settlement, event, and reconciliation runner commands in %s.\n' "$RUNTIME_DIR"
