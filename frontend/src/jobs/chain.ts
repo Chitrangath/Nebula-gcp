@@ -173,3 +173,24 @@ export async function withdrawInjectedWallet(provider: Eip1193Provider, signal?:
   if (receipt.status !== 'success') throw new Error('Withdrawal transaction reverted')
   return hash as Hex
 }
+
+/** Read the connected wallet's pull-payment balance from the escrow contract. */
+export async function readPendingWithdrawal(
+  provider: Eip1193Provider,
+  account: Address,
+  signal?: AbortSignal,
+): Promise<bigint> {
+  const transport = custom(provider)
+  const publicClient = createPublicClient({ chain: arbitrumSepolia, transport })
+  const address = paymentAddress()
+  const abi = contractArtifact.abi as Abi
+  const chainId = await publicClient.getChainId()
+  if (chainId !== ARBITRUM_SEPOLIA_CHAIN_ID) throw new WrongChainError(chainId)
+  signal?.throwIfAborted()
+  return await publicClient.readContract({
+    address,
+    abi,
+    functionName: 'getPendingWithdrawal',
+    args: [account],
+  }) as bigint
+}

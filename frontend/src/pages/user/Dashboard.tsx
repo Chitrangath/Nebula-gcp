@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { listJobs } from '../../jobs/backend'
 import { isTerminalJob, type Job } from '../../jobs/lifecycle'
+import { getAuthenticatedWallet } from '../../api/session'
+import { readPendingWithdrawal, withdrawInjectedWallet } from '../../jobs/chain'
 
 function modelLabel(model: string): string {
   if (model === 'bert-base') return 'BERT sentiment'
@@ -14,6 +16,21 @@ export default function UserDashboard() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [revision, setRevision] = useState(0)
+  const [pendingWithdrawal, setPendingWithdrawal] = useState<bigint | null>(null)
+  const [withdrawalLoading, setWithdrawalLoading] = useState(false)
+  const [withdrawalError, setWithdrawalError] = useState<string | null>(null)
+
+  async function refreshWithdrawal(signal?: AbortSignal): Promise<void> {
+    if (!window.ethereum) { setPendingWithdrawal(null); return }
+    const wallet = getAuthenticatedWallet()
+    if (!wallet) { setPendingWithdrawal(null); return }
+    try {
+      const value = await readPendingWithdrawal(window.ethereum, wallet, signal)
+      if (!signal?.aborted) setPendingWithdrawal(value)
+    } catch (caught) {
+      if (!signal?.aborted) setWithdrawalError(caught instanceof Error ? caught.message : 'Unable to read refund balance')
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController()
@@ -25,6 +42,24 @@ export default function UserDashboard() {
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [revision])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setWithdrawalError(null)
+    void refreshWithdrawal(controller.signal)
+    return () => controller.abort()
+  }, [revision])
+
+  async function withdraw(): Promise<void> {
+    if (!window.ethereum) { setWithdrawalError('Install and connect MetaMask first.'); return }
+    setWithdrawalLoading(true); setWithdrawalError(null)
+    try {
+      await withdrawInjectedWallet(window.ethereum)
+      setRevision((value) => value + 1)
+    } catch (caught) {
+      setWithdrawalError(caught instanceof Error ? caught.message : 'Withdrawal failed.')
+    } finally { setWithdrawalLoading(false) }
+  }
 
   const activeCount = jobs.filter((job) => !isTerminalJob(job.status) && !['expired_pre_escrow', 'attempts_exhausted'].includes(job.status)).length
   const settledCount = jobs.filter((job) => job.status === 'completed').length
@@ -38,6 +73,12 @@ export default function UserDashboard() {
       <div className="nebula-metric"><span>Total jobs</span><strong>{jobs.length}</strong><small>Submitted by this wallet</small></div>
       <div className="nebula-metric"><span>Active jobs</span><strong>{activeCount}</strong><small>Awaiting terminal outcome</small></div>
       <div className="nebula-metric"><span>Settled jobs</span><strong>{settledCount}</strong><small>Completed on chain</small></div>
+    </section>
+    <section aria-labelledby="refund-heading" className="nebula-data-panel mb-6">
+      <div className="nebula-data-panel-head"><div><p className="nebula-page-kicker">PULL PAYMENT</p><h2 id="refund-heading">Refund balance</h2></div></div>
+      <p className="nebula-panel-message">Refunds are credited on-chain to this wallet and can be withdrawn here.</p>
+      {pendingWithdrawal === null ? <p className="text-sm text-gray-500">Connect your wallet to check for a refundable balance.</p> : <div className="flex flex-wrap items-center justify-between gap-4"><div><strong className="text-xl">{pendingWithdrawal.toLocaleString()} base units</strong><p className="text-xs text-gray-500">Arbitrum Sepolia USDC</p></div>{pendingWithdrawal > 0n ? <button type="button" onClick={() => void withdraw()} disabled={withdrawalLoading} className="nebula-action-link disabled:opacity-60">{withdrawalLoading ? 'Withdrawing…' : 'Withdraw refund'}</button> : <span className="text-sm text-gray-500">No pending refund</span>}</div>}
+      {withdrawalError ? <p role="alert" className="mt-3 text-sm text-red-700">{withdrawalError}</p> : null}
     </section>
     <section className="nebula-data-panel" aria-labelledby="jobs-heading">
       <div className="nebula-data-panel-head"><div><p className="nebula-page-kicker">ACTIVITY</p><h2 id="jobs-heading">Job history</h2></div><button type="button" disabled={loading} onClick={() => setRevision((value) => value + 1)} className="nebula-text-button">{loading ? 'Refreshing…' : 'Refresh'}</button></div>
