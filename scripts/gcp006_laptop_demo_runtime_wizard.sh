@@ -88,6 +88,13 @@ show_status() {
   for pid_file in "$PID_DIR"/*.pid; do
     [[ -e "$pid_file" ]] || continue
     name=$(basename "$pid_file" .pid); pid=$(cat "$pid_file")
+    if [[ "$name" == worker && -f "$PROVIDER_WORKER_PID_FILE" ]]; then
+      local provider_pid; provider_pid=$(<"$PROVIDER_WORKER_PID_FILE")
+      if [[ "$provider_pid" =~ ^[0-9]+$ ]] && kill -0 "$provider_pid" 2>/dev/null; then
+        printf 'SKIPPED worker (provider Worker pid=%s is running)\n' "$provider_pid"
+        continue
+      fi
+    fi
     if kill -0 "$pid" 2>/dev/null; then printf 'RUNNING %s pid=%s\n' "$name" "$pid"; else printf 'STOPPED %s stale_pid=%s\n' "$name" "$pid"; fi
   done
 }
