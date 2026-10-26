@@ -101,7 +101,9 @@ class JobExecutor:
                                 await heartbeat
                 except Exception as exc:  # noqa: BLE001 - cycle isolation must survive any adapter failure
                     logger.warning(
-                        "worker_cycle_failed error_type=%s", type(exc).__name__
+                        "worker_cycle_failed error_type=%s error=%s",
+                        type(exc).__name__,
+                        str(exc)[:240],
                     )
                     if lease:
                         try:
@@ -112,8 +114,9 @@ class JobExecutor:
                             )
                         except Exception as report_exc:  # noqa: BLE001 - failure reporting must not stop polling
                             logger.warning(
-                                "worker_failure_report_failed error_type=%s",
+                                "worker_failure_report_failed error_type=%s error=%s",
                                 type(report_exc).__name__,
+                                str(report_exc)[:240],
                             )
                 await asyncio.sleep(self.settings.POLL_INTERVAL_SECONDS)
 
