@@ -16,7 +16,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import and_, delete, func, or_, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from web3.types import TxReceipt
 
 from app.models import (
     BlockchainEvent,
@@ -397,18 +400,37 @@ async def reconcile_job_state(
     # row. In that race, the event is intentionally retained with a NULL
     # relational job_id. Recover the link from the canonical bytes32 jobId so
     # a later reconciliation can still project settlement and lease state.
-    if job.chain_job_id:
+    scope = (
+        await db.execute(
+            select(ChainTransaction).where(
+                ChainTransaction.job_id == job_id,
+                ChainTransaction.tx_type == "createJob",
+            ).order_by(ChainTransaction.created_at.desc()).limit(1)
+        )
+    ).scalar_one_or_none()
+    if scope is not None:
+        events = [event for event in events if (
+            event.chain_id == scope.chain_id
+            and event.chain_instance_id == scope.chain_instance_id
+            and event.contract_address.lower() == scope.contract_address.lower()
+        )]
+    if job.chain_job_id and scope is not None:
         canonical_job_id = str(job.chain_job_id).lower()
         unlinked_result = await db.execute(
             select(BlockchainEvent).where(
                 BlockchainEvent.job_id.is_(None),
+                BlockchainEvent.chain_id == scope.chain_id,
+                BlockchainEvent.chain_instance_id == scope.chain_instance_id,
+                func.lower(BlockchainEvent.contract_address) == scope.contract_address.lower(),
                 BlockchainEvent.event_name.in_(
-                    ("JobCreated", "ProviderAssigned", "ProofSubmitted", "JobSettled", "PaymentCredited", "TimeoutRefundCredited")
+                    ("JobCreated", "ProviderAssigned", "ProofSubmitted", "JobSettled",
+                     "PaymentCredited", "TimeoutRefundCredited")
                 ),
             )
         )
         for candidate in unlinked_result.scalars().all():
-            event_job_id = str((candidate.event_data or {}).get("jobId", "")).lower()
+            candidate_data: dict[str, Any] = candidate.event_data or {}
+            event_job_id = str(candidate_data.get("jobId", "")).lower()
             if event_job_id == canonical_job_id:
                 candidate.job_id = job_id
                 events.append(candidate)
@@ -425,6 +447,14 @@ async def reconcile_job_state(
     confirmed = [e for e in events if e.confirmation_status in ("confirmed", "finalized")]
     finalized = [e for e in events if e.confirmation_status == "finalized"]
 
+    # Repair terminal outcomes only. Replaying old assignment evidence over
+    # newer Worker progress would regress running/verifying jobs or revive a
+    # failed lease. Older pending events cannot override a confirmed terminal
+    # outcome either.
+    if any(event.event_name in ("JobSettled", "TimeoutRefundCredited") for event in confirmed):
+        await _rebuild_job_projection(db, job_id, scope=scope)
+        await db.flush()
+
     if pending:
         return {
             "status": "pending_confirmation",
@@ -433,16 +463,6 @@ async def reconcile_job_state(
             "confirmed_count": len(confirmed),
             "finalized_count": len(finalized),
         }
-
-    # Event ingestion and status projection are intentionally separate
-    # operations.  A runner can crash after persisting a confirmed event but
-    # before applying its projection, leaving the API stuck in ``settling``
-    # even though the chain is already settled.  Rebuild from the retained
-    # canonical events during reconciliation; the rebuild is idempotent and
-    # therefore safe to run on every cycle.
-    if confirmed and job.status in {"queued", "assigned", "running", "verifying", "settling", "retry_pending"}:
-        await _rebuild_job_projection(db, job_id)
-        await db.flush()
 
     return {
         "status": "match",
@@ -488,19 +508,24 @@ class CriticalReconciliationError(RuntimeError):
     """Automated projection stopped because finalized history diverged."""
 
 
-async def _rebuild_job_projection(db: AsyncSession, job_id: uuid.UUID) -> None:
+async def _rebuild_job_projection(
+    db: AsyncSession, job_id: uuid.UUID, *, scope: ChainTransaction | None = None
+) -> None:
     """Rebuild chain-derived job/lease/payment state from canonical retained events."""
     job = (await db.execute(select(Job).where(Job.id == job_id))).scalar_one_or_none()
     if job is None:
         return
-    rows = await db.execute(
-        select(BlockchainEvent)
-        .where(
+    query = select(BlockchainEvent).where(
             BlockchainEvent.job_id == job_id,
             BlockchainEvent.confirmation_status.in_(["confirmed", "finalized"]),
         )
-        .order_by(BlockchainEvent.block_number, BlockchainEvent.log_index)
-    )
+    if scope is not None:
+        query = query.where(
+            BlockchainEvent.chain_id == scope.chain_id,
+            BlockchainEvent.chain_instance_id == scope.chain_instance_id,
+            func.lower(BlockchainEvent.contract_address) == scope.contract_address.lower(),
+        )
+    rows = await db.execute(query.order_by(BlockchainEvent.block_number, BlockchainEvent.log_index))
     events = list(rows.scalars().all())
     derived = [event for event in events if event.event_name != "__checkpoint__"]
     if any(event.event_name == "JobCreated" for event in derived):
@@ -664,7 +689,9 @@ class EventPoller:
         cursor = await self._cursor(db)
         if cursor:
             first = min(block_number for _, block_number, _, _, _ in divergent)
-            cursor.last_scanned_block = max(self.deployment_block - 1, first - 1)
+            cursor.last_scanned_block = min(
+                cursor.last_scanned_block, max(self.deployment_block - 1, first - 1)
+            )
             cursor.last_scanned_block_hash = "0x" + "00" * 32
         await db.commit()
         return len(divergent)
@@ -679,6 +706,82 @@ class EventPoller:
                 )
             )
         ).scalar_one_or_none()
+
+    async def ingest_receipt(
+        self,
+        db: AsyncSession,
+        receipt: TxReceipt,
+        *,
+        job_id: uuid.UUID,
+        required_event: str,
+    ) -> bool:
+        """Project a known canonical receipt without advancing the history cursor.
+
+        Current jobs must not wait for an unrelated historical getLogs backlog.
+        Use the same durable event records, finality policy and projection as
+        the scanner, verifying both the emitter and exact on-chain job ID.
+        """
+        await db.commit()
+        self.chain_instance_id = _hex(self.blockchain.get_block(0)["hash"]).lower()
+        cursor = await self._cursor(db)
+        if cursor and cursor.halted:
+            raise CriticalReconciliationError("receipt projection is halted by an open critical incident")
+        job = (await db.execute(select(Job).where(Job.id == job_id))).scalar_one()
+        chain_job_id = job.chain_job_id.lower()
+        await db.commit()
+        if int(receipt.get("status", 0)) != 1:
+            return False
+        block_number = int(receipt["blockNumber"])
+        # Existing confirmed/finalized evidence must retain the normal reorg
+        # protections even when history ingestion has not reached this block.
+        await self._detect_reorgs(db, block_number)
+        block = self.blockchain.get_block(block_number)
+        if _hex(receipt["blockHash"]).lower() != _hex(block["hash"]).lower():
+            return False
+        latest = self.blockchain.get_block_number()
+        depth = latest - block_number + 1
+        if depth < self.confirmations:
+            return False
+        items = [
+            item for item in decode_receipt_logs(receipt, self.blockchain.get_abi())
+            if str(item["address"]).lower() == self.contract_address.lower()
+            and _hex(item["args"].get("jobId", "")).lower() == chain_job_id
+            and _hex(item["transactionHash"]).lower() == _hex(receipt["transactionHash"]).lower()
+            and int(item["blockNumber"]) == block_number
+            and _hex(item["blockHash"]).lower() == _hex(block["hash"]).lower()
+        ]
+        if not any(item["event"] == required_event for item in items):
+            return False
+        # Both receipt ingestion and historical scanning take the job lock
+        # before recording logs. Concurrent runners then share idempotent
+        # event/payment insertion instead of racing their unique constraints.
+        await db.execute(select(Job).where(Job.id == job_id).with_for_update())
+        # An explicit history cursor prevents MAX(event.block_number) from
+        # mistaking a recent receipt for a complete historical backfill.
+        if await self._cursor(db) is None:
+            insert = pg_insert if db.get_bind().dialect.name == "postgresql" else sqlite_insert
+            await db.execute(insert(ChainCursor).values(
+                id=uuid.uuid4(), chain_id=self.chain_id,
+                chain_instance_id=self.chain_instance_id,
+                contract_address=self.contract_address,
+                last_scanned_block=max(0, self.deployment_block - 1),
+                last_scanned_block_hash="0x" + "00" * 32,
+            ).on_conflict_do_nothing(index_elements=["chain_id", "chain_instance_id", "contract_address"]))
+        for item in sorted(items, key=lambda value: int(value["logIndex"])):
+            data = _json_value(item["args"])
+            data["_blockTimestamp"] = int(block["timestamp"])
+            event = await record_event(
+                db, chain_id=self.chain_id, chain_instance_id=self.chain_instance_id,
+                contract_address=self.contract_address,
+                transaction_hash=_hex(item["transactionHash"]),
+                log_index=int(item["logIndex"]), block_number=block_number,
+                block_hash=_hex(block["hash"]), event_name=item["event"],
+                event_data=data, job_id=job_id,
+            )
+            event.confirmation_status = "finalized" if depth >= self.finality else "confirmed"
+            await self._project(db, event)
+        await db.flush()
+        return True
 
     async def run_once(self, db: AsyncSession) -> dict[str, int]:
         await db.commit()
@@ -745,6 +848,10 @@ class EventPoller:
         if candidate_job_ids:
             linked_job_ids = set(
                 (await db.execute(select(Job.id).where(Job.id.in_(candidate_job_ids)))).scalars().all()
+            )
+        if linked_job_ids:
+            await db.execute(
+                select(Job).where(Job.id.in_(linked_job_ids)).order_by(Job.id).with_for_update()
             )
         for item, job_uuid in decoded_items:
             args = item["args"]
@@ -838,18 +945,19 @@ class EventPoller:
             job.completed_at = datetime.fromtimestamp(int(data.get("timestamp", 0)), timezone.utc)
             lease = (await db.execute(select(Lease).where(Lease.id == job.current_lease_id))).scalar_one_or_none()
             if lease:
-                was_active = lease.status == "active"
                 lease.status = "completed" if valid else "failed"
                 attempt = (
                     await db.execute(select(JobAttempt).where(JobAttempt.lease_id == lease.id))
                 ).scalar_one_or_none()
-                if attempt and attempt.status == "running":
+                if attempt:
                     attempt.status = "completed" if valid else "failed"
                     attempt.completed_at = job.completed_at
-                if was_active:
-                    node = (await db.execute(select(Node).where(Node.id == lease.node_id))).scalar_one_or_none()
-                    if node:
-                        node.active_leases = max(0, int(node.active_leases or 0) - 1)
+                await db.flush()
+                node = (await db.execute(select(Node).where(Node.id == lease.node_id))).scalar_one_or_none()
+                if node:
+                    node.active_leases = int((await db.execute(
+                        select(func.count(Lease.id)).where(Lease.node_id == lease.node_id, Lease.status == "active")
+                    )).scalar_one())
         elif event.event_name in ("PaymentCredited", "TimeoutRefundCredited"):
             payment_type = "provider_credit" if event.event_name == "PaymentCredited" else "user_refund"
             if event.event_name == "TimeoutRefundCredited":

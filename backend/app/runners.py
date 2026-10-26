@@ -53,6 +53,9 @@ def build_runtime():
         chain_id=settings.CHAIN_ID,
         batch_size=settings.RUNNER_BATCH_SIZE,
         claim_ttl_seconds=settings.PROOF_CLAIM_TTL_SECONDS,
+        deployment_block=settings.CONTRACT_DEPLOYMENT_BLOCK,
+        confirmations=settings.CONFIRMATION_DEPTH,
+        finality=settings.FINALITY_DEPTH,
     )
     poller = EventPoller(
         blockchain=chain,

@@ -9,6 +9,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import ChainTransaction, Job, JobAttempt, Lease, Proof
+from app.services.blockchain_events import EventPoller
 from app.services.blockchain_service import (
     BlockchainBackend,
     build_submit_proof_tx,
@@ -36,6 +37,9 @@ class SettlementCoordinator:
         chain_id: int,
         batch_size: int = 25,
         claim_ttl_seconds: int = 300,
+        deployment_block: int = 0,
+        confirmations: int = 1,
+        finality: int = 10,
     ):
         self.blockchain = blockchain
         self.signer = signer
@@ -44,6 +48,10 @@ class SettlementCoordinator:
         self.chain_id = chain_id
         self.batch_size = batch_size
         self.claim_ttl_seconds = claim_ttl_seconds
+        self.event_poller = EventPoller(
+            blockchain=blockchain, chain_id=chain_id, contract_address=contract_address,
+            deployment_block=deployment_block, confirmations=confirmations, finality=finality,
+        )
 
     async def run_once(self, db: AsyncSession) -> dict[str, int]:
         verified = await self._verify_queued(db)
@@ -338,13 +346,20 @@ class SettlementCoordinator:
         chain_instance_id = get_chain_instance_id(self.blockchain)
         query = await db.execute(
             select(ChainTransaction.id)
+            .join(Job, Job.id == ChainTransaction.job_id)
             .where(
-                ChainTransaction.status == "submitted",
+                or_(
+                    ChainTransaction.status.in_(("submitted", "confirmed")),
+                    (ChainTransaction.status == "finalized")
+                    & (ChainTransaction.tx_type == "verifyJob")
+                    & Job.status.notin_(("completed", "refunded")),
+                ),
                 ChainTransaction.tx_type.in_(["submitProof", "verifyJob"]),
                 ChainTransaction.chain_id == self.chain_id,
                 ChainTransaction.chain_instance_id == chain_instance_id,
                 ChainTransaction.contract_address == self.contract_address,
             )
+            .order_by(ChainTransaction.created_at)
             .limit(self.batch_size)
         )
         intent_ids = list(query.scalars().all())
@@ -362,12 +377,19 @@ class SettlementCoordinator:
             receipt = self.blockchain.get_transaction_receipt(tx_hash)
             if receipt is None:
                 continue
+            if str(receipt.get("to", "")).lower() != self.contract_address.lower():
+                continue
+            raw_hash = receipt["transactionHash"]
+            receipt_hash = "0x" + raw_hash.hex() if isinstance(raw_hash, bytes) else str(raw_hash)
+            if receipt_hash.lower() != tx_hash.lower():
+                continue
             intent = (
                 await db.execute(select(ChainTransaction).where(ChainTransaction.id == intent_id).with_for_update())
             ).scalar_one()
-            if intent.status != "submitted":
+            if intent.status not in ("submitted", "confirmed", "finalized"):
                 await db.commit()
                 continue
+            previous_status = intent.status
             if int(receipt.get("status", 0)) != 1:
                 intent.status = "reverted"
                 await db.commit()
@@ -379,13 +401,21 @@ class SettlementCoordinator:
                 intent.error = f"missing {required} event"
                 await db.commit()
                 continue
-            intent.status = "confirmed"
+            # Confirmation must project actual canonical receipt events as
+            # well as the outbox status. Otherwise Job/Lease stay settling/
+            # active until a historical scanner catches up, potentially days.
+            if not await self.event_poller.ingest_receipt(
+                db, receipt, job_id=intent.job_id, required_event=required,
+            ):
+                continue
+            intent = (await db.execute(select(ChainTransaction).where(ChainTransaction.id == intent_id))).scalar_one()
             intent.block_number = int(receipt["blockNumber"])
             block_hash = receipt["blockHash"]
             intent.block_hash = "0x" + block_hash.hex() if isinstance(block_hash, bytes) else str(block_hash)
             if intent.tx_type == "submitProof":
                 job = (await db.execute(select(Job).where(Job.id == intent.job_id))).scalar_one()
-                job.status = "settling"
+                if job.status not in ("completed", "refunded"):
+                    job.status = "settling"
                 key = f"verifyJob:{intent.job_id}"
                 prior = await db.execute(select(ChainTransaction).where(ChainTransaction.idempotency_key == key))
                 if prior.scalar_one_or_none() is None:
@@ -403,6 +433,7 @@ class SettlementCoordinator:
                             status="pending",
                         )
                     )
-            count += 1
+            if intent.status != previous_status:
+                count += 1
             await db.commit()
         return count
