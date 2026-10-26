@@ -393,6 +393,27 @@ async def reconcile_job_state(
     event_result = await db.execute(select(BlockchainEvent).where(BlockchainEvent.job_id == job_id))
     events = list(event_result.scalars().all())
 
+    # A chain event can be ingested before the API has persisted its local Job
+    # row. In that race, the event is intentionally retained with a NULL
+    # relational job_id. Recover the link from the canonical bytes32 jobId so
+    # a later reconciliation can still project settlement and lease state.
+    if job.chain_job_id:
+        canonical_job_id = str(job.chain_job_id).lower()
+        unlinked_result = await db.execute(
+            select(BlockchainEvent).where(
+                BlockchainEvent.job_id.is_(None),
+                BlockchainEvent.event_name.in_(
+                    ("JobCreated", "ProviderAssigned", "ProofSubmitted", "JobSettled", "PaymentCredited", "TimeoutRefundCredited")
+                ),
+            )
+        )
+        for candidate in unlinked_result.scalars().all():
+            event_job_id = str((candidate.event_data or {}).get("jobId", "")).lower()
+            if event_job_id == canonical_job_id:
+                candidate.job_id = job_id
+                events.append(candidate)
+        await db.flush()
+
     if not events:
         return {
             "status": "no_chain_events",
