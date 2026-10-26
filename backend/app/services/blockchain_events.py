@@ -413,6 +413,16 @@ async def reconcile_job_state(
             "finalized_count": len(finalized),
         }
 
+    # Event ingestion and status projection are intentionally separate
+    # operations.  A runner can crash after persisting a confirmed event but
+    # before applying its projection, leaving the API stuck in ``settling``
+    # even though the chain is already settled.  Rebuild from the retained
+    # canonical events during reconciliation; the rebuild is idempotent and
+    # therefore safe to run on every cycle.
+    if confirmed and job.status in {"queued", "assigned", "running", "verifying", "settling", "retry_pending"}:
+        await _rebuild_job_projection(db, job_id)
+        await db.flush()
+
     return {
         "status": "match",
         "db_status": job.status,
