@@ -12,6 +12,7 @@ readonly PID_DIR="${RUNTIME_DIR}/pids"
 readonly LOG_DIR="${RUNTIME_DIR}/logs"
 readonly BACKEND_ENV="${NEBULA_GCP_CONFIG_DIR}/laptop-backend.env"
 readonly WORKER_ENV="${NEBULA_GCP_CONFIG_DIR}/laptop-worker.env"
+readonly PROVIDER_WORKER_PID_FILE="${NEBULA_GCP_STATE_DIR}/demo008-provider/worker.pid"
 
 show_plan() {
   printf '%s\n' \
@@ -67,6 +68,13 @@ prepare_commands() {
 
 start_process() {
   local name="$1" path="${RUNTIME_DIR}/$1.sh"
+  if [[ "$name" == worker && -f "$PROVIDER_WORKER_PID_FILE" ]]; then
+    local provider_pid; provider_pid=$(<"$PROVIDER_WORKER_PID_FILE")
+    if [[ "$provider_pid" =~ ^[0-9]+$ ]] && kill -0 "$provider_pid" 2>/dev/null; then
+      printf 'Skipping owner runtime Worker because provider Worker pid=%s is already running.\n' "$provider_pid"
+      return 0
+    fi
+  fi
   confirm_action "START-${name^^}" "Start the controlled ${name} process for this supervised demonstration?" || return 0
   nohup "$path" > "${LOG_DIR}/${name}.log" 2>&1 &
   printf '%s\n' "$!" > "${PID_DIR}/${name}.pid"
