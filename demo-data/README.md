@@ -8,19 +8,23 @@ These examples exercise existing trained models; they do not train a model.
 
 ## ResNet50: upload an image
 
-Select **ResNet50 · Image classification**, then upload either example:
+Select **ResNet50 · Image classification**, then upload any example:
 
 | File | Purpose |
 | --- | --- |
 | `resnet50/01-dog.jpg` | A dog photograph from the official Torchvision gallery |
 | `resnet50/02-dog.jpg` | A different dog photograph to demonstrate a second input |
+| `resnet50/03-tabby-cat.png` | A generated orange tabby cat portrait |
+| `resnet50/04-african-elephant.png` | A generated African elephant photograph |
+| `resnet50/05-school-bus.png` | A generated yellow school bus photograph |
+| `resnet50/06-coffee-mug.png` | A generated white coffee mug photograph |
 
 The result contains the model's top ImageNet class indices and probabilities.
 Predictions are computed by the GPU Worker. A particular breed, score, or class
 index is not guaranteed by this example pack.
 
-Both images are unmodified downloads. The Torchvision source URLs are recorded
-in `SOURCES.md`; image rights remain with their respective owners.
+The two dog images are unmodified downloads. Their Torchvision source URLs and
+the provenance of the generated images are recorded in `SOURCES.md`.
 
 ## BERT: paste a review
 
@@ -36,6 +40,12 @@ box for BERT rather than a file picker.
 | `bert/04-positive-french.txt` | Positive French review |
 | `bert/05-negative-spanish.txt` | Negative Spanish review |
 | `bert/06-positive-german.txt` | Positive German review |
+| `bert/07-very-positive.txt` | Strongly positive English review |
+| `bert/08-very-negative.txt` | Strongly negative English review |
+| `bert/09-neutral-mixed.txt` | Neutral / mixed English review |
+| `bert/10-positive-hindi.txt` | Positive Hindi review |
+| `bert/11-negative-italian.txt` | Negative Italian review |
+| `bert/12-positive-japanese.txt` | Positive Japanese review |
 
 These are original synthetic product reviews and contain no personal data.
 All are under the website's 510-character limit. Intended sentiment is a
@@ -50,7 +60,8 @@ presentation aid, not a promised model prediction; BERT returns its actual
    settlement, and provider credit.
 4. Submit the contents of `bert/01-positive.txt` as a new BERT job.
 5. Optionally submit `bert/02-negative.txt` to compare sentiment results.
-6. Use the second dog image or a multilingual review for further examples.
+6. Use the cat, elephant, bus, or mug image—or a multilingual review—for
+   further examples.
 
 Either compatible provider can execute either model. One provider can execute
 these jobs sequentially. Keep the owner runners and provider Worker processes
