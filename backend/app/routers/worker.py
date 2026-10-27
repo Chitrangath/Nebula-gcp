@@ -553,7 +553,14 @@ async def worker_model_download_url(
     if not model or not model.model_source_url:
         raise HTTPException(status_code=404, detail="Model artifact is not configured")
     try:
-        url = await storage.generate_download_url(model.model_source_url, expires_in=min(900, remaining))
+        url = await storage.generate_download_url(
+            model.model_source_url,
+            expires_in=min(
+                settings.OBJECT_STORAGE_CAPABILITY_TTL_SECONDS,
+                900,
+                remaining,
+            ),
+        )
     except (StorageUnavailableError, NotImplementedError) as exc:
         raise HTTPException(status_code=503, detail="Private model download unavailable") from exc
     return {"url": url}

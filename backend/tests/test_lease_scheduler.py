@@ -323,6 +323,36 @@ class TestScheduler:
         assert expired.status_code == 409
 
     @pytest.mark.asyncio
+    async def test_private_model_url_respects_the_configured_capability_ttl(
+        self, db, seed_queued_job, seed_node, seed_model
+    ):
+        from httpx import ASGITransport, AsyncClient
+
+        from app.main import app
+        from app.services.lease_service import activate_lease
+        from app.services.storage import InMemoryStorage
+
+        class BoundedCapabilityStorage(InMemoryStorage):
+            async def generate_download_url(self, key: str, expires_in: int = 300) -> str:
+                if expires_in > 300:
+                    raise ValueError("capability expiry exceeds the configured bounded lifetime")
+                return f"https://private.invalid/{key}?expires={expires_in}"
+
+        seed_model.model_source_url = "models/bert-base/approved.safetensors"
+        _, _, lease = await schedule_next_job(db)
+        await activate_lease(db, lease.id)
+        app.state.storage = BoundedCapabilityStorage()
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.get(
+                f"/v1/worker/leases/{lease.id}/model-url",
+                headers={"X-API-Key": "test-key"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["url"].endswith("?expires=300")
+
+    @pytest.mark.asyncio
     async def test_user_can_see_assigned_provider_without_node_credentials(self, db, seed_queued_job, seed_node):
         from httpx import ASGITransport, AsyncClient
 
