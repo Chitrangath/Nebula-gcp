@@ -17,9 +17,29 @@ const stageLabels: Record<SubmissionStage, string> = {
   confirming_escrow: 'Confirming escrow with Nebula…',
 }
 
-function safeError(error: unknown): string {
+function imageInputGuidance(model: SupportedModel): string {
+  const formats = model.supported_formats.map((format) => `.${format.replace(/^\./, '').toLowerCase()}`).join(', ')
+  const size = model.max_input_size_mb ? ` Maximum size: ${model.max_input_size_mb} MB.` : ''
+  return `Use a valid ${formats} image with matching file extension and MIME type.${size} Image dimensions must be between 1 and 16,384 pixels on each side.`
+}
+
+function explainInputProblem(detail: string, model: SupportedModel): string {
+  const normalized = detail.toLowerCase()
+  if (model.input_type !== 'image') return `BERT input rejected: ${detail}. Use non-empty UTF-8 text of at most 510 characters.`
+  if (normalized.includes('size limit')) return `Image rejected: ${detail}. ${imageInputGuidance(model)}`
+  if (normalized.includes('dimension')) return `Image rejected: ${detail}. Use width and height from 1 to 16,384 pixels.`
+  if (normalized.includes('mime type') || normalized.includes('extension') || normalized.includes('magic bytes') || normalized.includes('malformed')) {
+    return `Image rejected: ${detail}. Re-save or export the image as a real JPEG or PNG, then upload it with the matching .jpg, .jpeg, or .png extension.`
+  }
+  return `Nebula rejected the input: ${detail}. ${imageInputGuidance(model)}`
+}
+
+function safeError(error: unknown, model?: SupportedModel): string {
   if (error instanceof FundingError || error instanceof FundingReviewChangedError || error instanceof TransactionError || error instanceof WalletIdentityError || error instanceof ApiUnavailableError) return error.message
-  if (error instanceof ApiProblemError) return `Nebula rejected the request: ${error.message}`
+  if (error instanceof ApiProblemError) {
+    if (error.detail && model && (error.status === 400 || error.status === 413 || error.status === 422)) return explainInputProblem(error.detail, model)
+    return `Nebula rejected the request: ${error.detail ?? error.message}`
+  }
   if (error instanceof DOMException && error.name === 'AbortError') return 'Submission cancelled'
   return 'Job submission failed. Retry to continue safely from the last confirmed step.'
 }
@@ -73,7 +93,7 @@ export default function SubmitJob({ models: suppliedModels, backend = jobBackend
     if (!submissionInput) { setError('Choose a JPEG or PNG image, then try again'); return }
     if (selectedModel.max_input_size_mb && submissionInput.size > selectedModel.max_input_size_mb * 1024 * 1024) { setError(`Input is too large; maximum size is ${selectedModel.max_input_size_mb} MB`); return }
     if (!modelMimeTypes(selectedModel).includes(submissionInput.type)) {
-      setError(selectedModel.input_type === 'text' ? 'Choose a supported text input' : 'Choose a supported JPEG or PNG input')
+      setError(selectedModel.input_type === 'text' ? 'Choose a supported text input' : `Image format not supported. ${imageInputGuidance(selectedModel)}`)
       return
     }
     if (!chain) { setError(chainError ?? 'Connect an Arbitrum Sepolia wallet before funding a job'); return }
@@ -106,7 +126,7 @@ export default function SubmitJob({ models: suppliedModels, backend = jobBackend
     } catch (caught) {
       if (!activeController.signal.aborted) {
         if (caught instanceof FundingReviewChangedError) setReview(null)
-        setError(safeError(caught))
+        setError(safeError(caught, selectedModel))
       }
     } finally {
       if (!activeController.signal.aborted) setStage(null)
@@ -144,7 +164,7 @@ export default function SubmitJob({ models: suppliedModels, backend = jobBackend
           <div><dt className="font-medium">Exact escrow amount</dt><dd>{review.jobPrice.toString()} base units</dd></div>
           <div><dt className="font-medium">Estimated gas reserve</dt><dd>{review.requiredNativeBalance.toString()} wei</dd></div>
         </dl> : null}
-        {error || chainError ? <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800"><p className="font-semibold">{chainError ? 'Job submission unavailable' : 'The job was not submitted'}</p><p className="mt-1 text-sm">{chainError ?? error}</p></div> : null}
+        {error || chainError ? <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800"><p className="font-semibold">{chainError ? 'Job submission unavailable' : error?.startsWith('Image rejected:') ? 'The image was rejected' : error?.startsWith('BERT input rejected:') ? 'The text was rejected' : 'The job was not submitted'}</p><p className="mt-1 text-sm">{chainError ?? error}</p></div> : null}
         <button type="submit" disabled={stage !== null || submittedJobId !== null || models.length === 0 || chainError !== null} className="min-h-11 rounded-lg bg-primary-600 px-5 py-3 font-semibold text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
           {stage ? stageLabels[stage] : error && checkpoint.current ? 'Retry submission' : review ? 'Confirm upload and sign' : 'Review funding'}
         </button>

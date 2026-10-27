@@ -8,12 +8,14 @@ type RefreshResponse = components['schemas']['RefreshResponse']
 export class ApiProblemError extends Error {
   readonly status: number
   readonly type: string
+  readonly detail: string | null
 
-  constructor(problem: Pick<Problem, 'title' | 'status' | 'type'>) {
+  constructor(problem: Pick<Problem, 'title' | 'status' | 'type'> & Partial<Pick<Problem, 'detail'>>) {
     super(problem.title || 'Request failed')
     this.name = 'ApiProblemError'
     this.status = problem.status
     this.type = problem.type
+    this.detail = typeof problem.detail === 'string' ? problem.detail : null
   }
 }
 
@@ -46,6 +48,7 @@ async function problemFrom(response: Response): Promise<ApiProblemError> {
       title: typeof problem.title === 'string' ? problem.title : 'Request failed',
       status: response.status,
       type: typeof problem.type === 'string' ? problem.type : 'about:blank',
+      detail: typeof problem.detail === 'string' ? problem.detail : undefined,
     })
   } catch {
     return new ApiProblemError({ title: 'Request failed', status: response.status, type: 'about:blank' })

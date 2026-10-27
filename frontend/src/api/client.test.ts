@@ -54,6 +54,16 @@ describe('typed API client', () => {
     await expect(requestApi('/jobs', { method: 'GET' })).rejects.toEqual(new ApiUnavailableError())
   })
 
+  it('preserves server validation detail for user-facing correction guidance', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      title: 'Request failed', status: 422, detail: 'input MIME type does not match its extension', type: 'about:blank', instance: '/jobs',
+    }), { status: 422, headers: { 'Content-Type': 'application/problem+json' } }))
+
+    await expect(requestApi('/jobs', { method: 'GET' })).rejects.toMatchObject({
+      name: 'ApiProblemError', status: 422, detail: 'input MIME type does not match its extension',
+    })
+  })
+
   it('shares one refresh across concurrent expired requests', async () => {
     setAccessToken('expired')
     const fetchMock = vi.spyOn(globalThis, 'fetch')

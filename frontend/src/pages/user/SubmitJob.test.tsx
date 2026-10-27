@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 
 import type { SupportedModel } from '../../jobs/backend'
+import { ApiProblemError } from '../../api/client'
 import type { ChainGateway, JobBackend } from '../../jobs/submitJob'
 import SubmitJob from './SubmitJob'
 import { setAuthenticatedWallet } from '../../api/session'
@@ -61,6 +62,27 @@ describe('SubmitJob', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('too large')
     expect(deps.backend.createJob).not.toHaveBeenCalled()
     expect(deps.chain.createJob).not.toHaveBeenCalled()
+  })
+
+  it('explains server-side image validation failures and how to correct them', async () => {
+    const deps = dependencies()
+    const problem = new ApiProblemError({
+      title: 'Request failed',
+      status: 422,
+      type: 'about:blank',
+      detail: 'input MIME type does not match its extension',
+    })
+    vi.mocked(deps.backend.createJob).mockRejectedValue(problem)
+    render(<MemoryRouter><SubmitJob models={[model]} backend={deps.backend} chain={deps.chain} authenticatedWallet={account} /></MemoryRouter>)
+
+    await userEvent.upload(screen.getByLabelText(/^ResNet input/), new File(['not-a-real-image'], 'photo.png', { type: 'image/png' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Review funding' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm upload and sign' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('The image was rejected')
+    expect(alert).toHaveTextContent('MIME type does not match its extension')
+    expect(alert).toHaveTextContent('Re-save or export the image as a real JPEG or PNG')
   })
 
   it('reads a wallet authenticated after the page was already rendered', async () => {
